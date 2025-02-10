@@ -1,4 +1,4 @@
-package controller;
+package com.chatapp.backend.controller;
 
 import com.chatapp.backend.model.User;
 import com.chatapp.backend.repository.UserRepository;
@@ -9,7 +9,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,7 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    // Replace UserRepository with CustomUserDetailsService
     @Autowired
     private CustomUserDetailsService customUserDetailsService;
 
@@ -30,7 +28,9 @@ public class AuthController {
     @Autowired
     private AuthenticationManager authenticationManager;
 
-    // Keep UserRepository only if needed for registration
+    @Autowired
+    private JwtUtils jwtUtils; // Inject JwtUtils
+
     @Autowired
     private UserRepository userRepository;
 
@@ -48,7 +48,7 @@ public class AuthController {
         );
         // Use CustomUserDetailsService to load UserDetails
         UserDetails userDetails = customUserDetailsService.loadUserByUsername(user.getUsername());
-        String token = JwtUtils.generateToken(userDetails);
+        String token = jwtUtils.generateToken(userDetails);
         return ResponseEntity.ok(token);
     }
 }

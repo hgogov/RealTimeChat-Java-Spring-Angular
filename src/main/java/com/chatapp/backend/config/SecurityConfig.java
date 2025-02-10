@@ -1,5 +1,8 @@
 package com.chatapp.backend.config;
 
+import com.chatapp.backend.filter.JwtAuthFilter;
+import com.chatapp.backend.service.CustomUserDetailsService;
+import com.chatapp.backend.utils.JwtUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -10,10 +13,24 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    private final CustomUserDetailsService customUserDetailsService;
+    private final JwtUtils jwtUtils;
+
+    public SecurityConfig(CustomUserDetailsService customUserDetailsService, JwtUtils jwtUtils) {
+        this.customUserDetailsService = customUserDetailsService;
+        this.jwtUtils = jwtUtils;
+    }
+
+    @Bean
+    public JwtAuthFilter jwtAuthFilter() {
+        return new JwtAuthFilter(jwtUtils, customUserDetailsService);
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -22,7 +39,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll() // Public routes
                         .anyRequest().authenticated() // All other routes require auth
-                );
+                )
+                // Add JWT filter before Spring Security's default auth filter
+                .addFilterBefore(jwtAuthFilter(), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

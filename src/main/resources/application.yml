@@ -1,18 +1,28 @@
 spring:
   application:
     name: Chat Backend
-# Database
+  # Database
   datasource:
     driver-class-name: org.postgresql.Driver
+    username: chat_user
     password: chat_password
     url: jdbc:postgresql://localhost:5432/chatdb
-    username: chat_user
-# Flyway
+  # Flyway
   flyway:
     enabled: true
     locations: classpath:db/migration
-# Hibernate
+  # Hibernate
   jpa:
     hibernate:
       ddl-auto: validate
     show-sql: true
+  # Logging
+  logging:
+    level:
+      org.springframework: DEBUG
+      com.fasterxml.jackson: DEBUG
+
+jwt:
+  secret: BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=
+  expiration:
+    ms: 86400000 # 24 hours

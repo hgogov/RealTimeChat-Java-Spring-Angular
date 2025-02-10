@@ -1,0 +1,22 @@
+spring:
+  flyway:
+    enabled: false
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  logging:
+    level:
+      org:
+        hibernate: DEBUG
+        springframework: DEBUG
+        com.fasterxml.jackson: DEBUG
+
+jwt:
+  secret: BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=
+  expiration:
+    ms: 86400000 # 24 hours
