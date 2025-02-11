@@ -1,12 +1,10 @@
 package com.chatapp.backend.controller;
 
 import com.chatapp.backend.model.Message;
-import com.chatapp.backend.repository.MessageRepository;
 import com.chatapp.backend.service.KafkaProducerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 @Controller
