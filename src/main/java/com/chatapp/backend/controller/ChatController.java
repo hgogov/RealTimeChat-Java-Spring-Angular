@@ -19,10 +19,12 @@ public class ChatController {
 
     @MessageMapping("/chat.sendMessage")
     public void sendMessage(@Payload Message message) {
+        System.out.println("Received message: " + message);
         // Save the message to the database
         messageRepository.save(message);
 
         // Broadcast the message to the chat room
         messagingTemplate.convertAndSend("/topic/chat/" + message.getRoomId(), message);
+        System.out.println("Broadcasted message to /topic/chat/" + message.getRoomId());
     }
 }

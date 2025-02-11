@@ -37,7 +37,7 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable) // Disable CSRF for APIs
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll() // Public routes
+                        .requestMatchers("/api/auth/**", "/chat-websocket/**").permitAll() // Public routes
                         .anyRequest().authenticated() // All other routes require auth
                 )
                 // Add JWT filter before Spring Security's default auth filter

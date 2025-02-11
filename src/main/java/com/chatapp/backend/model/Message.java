@@ -1,5 +1,6 @@
 package com.chatapp.backend.model;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -23,5 +24,6 @@ public class Message {
     private String roomId;
 
     @Column(nullable = false)
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime timestamp = LocalDateTime.now();
 }
