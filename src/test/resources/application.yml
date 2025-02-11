@@ -9,12 +9,27 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+  kafka:
+    bootstrap-servers: localhost:29092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.chatapp.backend.model"
   logging:
     level:
       org:
         hibernate: DEBUG
         springframework: DEBUG
         com.fasterxml.jackson: DEBUG
+        apache.kafka: DEBUG
+
+kafka:
+  topics:
+    chat-messages: chat-messages
 
 jwt:
   secret: BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=
