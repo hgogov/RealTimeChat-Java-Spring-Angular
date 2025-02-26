@@ -32,10 +32,24 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
+      group-id: chat-backend-group
+      auto-offset-reset: earliest
+      enable-auto-commit: false  # Manually acknowledge messages
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
-        spring.json.trusted.packages: "com.chatapp.backend.model" # Trust deserialization of Message class
+        spring:
+          deserializer:
+            value:
+              delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+          json:
+            trusted:
+              packages: "*"   # Accept all packages
+            value.default.type: "com.chatapp.backend.model.ChatMessage"  # Define the default type properly
+        session.timeout.ms: 60000  # Extend session timeout (default is usually 45000)
+        heartbeat.interval.ms: 15000  # Adjust heartbeat frequency
+    listener:
+      ack-mode: manual  # Explicitly set to manual acknowledgment
 
   # Logging Configuration
   logging:
@@ -44,6 +58,8 @@ spring:
       com.fasterxml.jackson: DEBUG
       org.hibernate: DEBUG
       org.apache.kafka: DEBUG
+      org.springframework.kafka: DEBUG
+      com.chatapp.backend.service.KafkaConsumerService: DEBUG
 
   # Jackson Configuration (for JSON serialization/deserialization)
   jackson:

@@ -1,37 +1,55 @@
 spring:
   flyway:
-    enabled: false
+    enabled: false  # Disable Flyway for tests (using H2 in-memory)
+
   datasource:
     url: jdbc:h2:mem:testdb
     driver-class-name: org.h2.Driver
     username: sa
-    password:
+    password:  # Empty password for H2
+
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: create-drop  # Create and drop schema for each test run
+
   kafka:
-    bootstrap-servers: localhost:29092
+    # bootstrap-servers omitted since @EmbeddedKafka will set it dynamically
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
+      group-id: chat-backend-group
+      auto-offset-reset: earliest
+      enable-auto-commit: false  # Manual acknowledgment
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
-        spring.json.trusted.packages: "com.chatapp.backend.model"
+        spring:
+          deserializer:
+            value:
+              delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+          json:
+            trusted:
+              packages: "com.chatapp.backend.model"  # Updated to match your package
+            value.default.type: "com.chatapp.backend.model.ChatMessage"  # Correct package
+        session.timeout.ms: 60000
+        heartbeat.interval.ms: 15000
+
   logging:
     level:
       org:
         hibernate: DEBUG
         springframework: DEBUG
-        com.fasterxml.jackson: DEBUG
-        apache.kafka: DEBUG
+      com.fasterxml.jackson: DEBUG
+      org.apache.kafka: DEBUG
+      org.springframework.kafka: DEBUG
+      com.chatapp.backend.service.KafkaConsumerService: DEBUG
 
 kafka:
   topics:
-    chat-messages: chat-messages
+    chat-messages: chat-messages  # Topic name for Kafka messages
 
 jwt:
-  secret: BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=
+  secret: test-secret-for-jwt-validation-only-12345  # Test-specific secret
   expiration:
-    ms: 86400000 # 24 hours
+    ms: 86400000  # 24 hours
