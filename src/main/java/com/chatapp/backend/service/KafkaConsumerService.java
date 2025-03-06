@@ -25,13 +25,15 @@ public class KafkaConsumerService {
     @KafkaListener(topics = "${kafka.topics.chat-messages}", groupId = "chat-backend-group")
     public void consumeMessage(ChatMessage message, Acknowledgment acknowledgment) {
         try {
-            // Log the consumed message
             logger.info("[KafkaConsumerService] Consumed message: {}", message);
+
+            // Simulate a transient failure
+            if (message.getContent().contains("fail")) {
+                throw new RuntimeException("Simulated transient failure");
+            }
 
             // Save to DB
             ChatMessage savedMessage = messageRepository.save(message);
-
-            // Log the saved message
             logger.info("[KafkaConsumerService] Saved message to DB: {}", savedMessage);
 
             // Broadcast to WebSocket subscribers
@@ -41,7 +43,8 @@ public class KafkaConsumerService {
             acknowledgment.acknowledge();
         } catch (Exception e) {
             logger.error("[KafkaConsumerService] Error processing message: {}", message, e);
-            // Do not acknowledge the message, so Kafka retries it
+            // Re-throw to trigger retry/DLQ configured in KafkaConfig
+            throw e;
         }
     }
 
