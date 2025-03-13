@@ -10,24 +10,6 @@ spring:
     password: chat_password
     url: jdbc:postgresql://localhost:5432/chatdb
 
-  # Monitoring Configuration
-  management:
-    endpoints:
-      web:
-        exposure:
-          include: health, prometheus, metrics
-    metrics:
-      tags:
-        application: chat-app
-      export:
-        prometheus:
-          enabled: true
-      kafka:
-        template:
-          enabled: true
-        binder:
-          enabled: true
-
   # Flyway Configuration
   flyway:
     enabled: true

@@ -12,24 +12,6 @@ spring:
     hibernate:
       ddl-auto: create-drop  # Create and drop schema for each test run
 
-  # Monitoring Configuration
-  management:
-    endpoints:
-      web:
-        exposure:
-          include: health, prometheus, metrics
-    metrics:
-      tags:
-        application: chat-app
-      export:
-        prometheus:
-          enabled: true
-      kafka:
-        template:
-          enabled: true
-        binder:
-          enabled: true
-
   kafka:
     # bootstrap-servers omitted since @EmbeddedKafka will set it dynamically
     producer:

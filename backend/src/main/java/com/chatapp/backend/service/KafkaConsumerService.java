@@ -27,10 +27,10 @@ public class KafkaConsumerService {
         try {
             logger.info("[KafkaConsumerService] Consumed message: {}", message);
 
-            // Simulate a transient failure
-            if (message.getContent().contains("fail")) {
-                throw new RuntimeException("Simulated transient failure");
-            }
+//            // Simulate a transient failure
+//            if (message.getContent().contains("fail")) {
+//                throw new RuntimeException("Simulated transient failure");
+//            }
 
             // Save to DB
             ChatMessage savedMessage = messageRepository.save(message);

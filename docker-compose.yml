@@ -54,6 +54,18 @@ services:
     networks:
       - chat_network
 
+  backend:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - kafka
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - chat_network
+
 volumes:
   postgres_data:
   redis_data:
