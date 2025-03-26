@@ -1,7 +1,73 @@
-<mat-list>
-  <mat-list-item *ngFor="let user of (presence$ | async)">
-    <span [class.online]="user.online" [class.offline]="!user.online">
-      {{ user.username }}
-    </span>
-  </mat-list-item>
-</mat-list>
+<div class="chat-container">
+  <mat-card class="chat-card">
+    <mat-card-header>
+      <mat-card-title>
+        <div class="title-row">
+          <span>Chat Room: {{currentRoom || 'General'}}</span>
+          <div class="header-actions">
+            <button mat-icon-button [matMenuTriggerFor]="menu">
+              <mat-icon>more_vert</mat-icon>
+            </button>
+            <mat-menu #menu="matMenu">
+              <button mat-menu-item (click)="joinRoom('general')">Join General Room</button>
+              <button mat-menu-item (click)="joinRoom('random')">Join Random Room</button>
+              <button mat-menu-item (click)="logout()">Logout</button>
+            </mat-menu>
+          </div>
+        </div>
+      </mat-card-title>
+    </mat-card-header>
+
+    <mat-card-content>
+      <!-- Online Users List -->
+      <div class="user-list">
+        <h3>Online Users</h3>
+        <div *ngFor="let user of onlineUsers">
+          <span [class.online]="user.online" [class.offline]="!user.online">
+            {{ user.username }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Typing Indicator -->
+      <div *ngIf="isSomeoneTyping" class="typing-indicator">
+        {{ typingUsername }} is typing...
+      </div>
+
+      <!-- Messages Container -->
+      <div class="messages-container">
+        <mat-list role="list">
+          <mat-list-item *ngFor="let message of messages" role="listitem" class="message-item">
+            <div class="message" [ngClass]="{'my-message': message.sender === currentUser?.username}">
+              <div class="message-header">
+                <span class="sender">{{message.sender}}</span>
+                <span class="timestamp">{{message.timestamp | date:'short'}}</span>
+              </div>
+              <div class="message-content">
+                {{message.content}}
+              </div>
+            </div>
+          </mat-list-item>
+        </mat-list>
+      </div>
+
+      <mat-divider></mat-divider>
+
+      <!-- Message Form -->
+      <form [formGroup]="messageForm" (ngSubmit)="sendMessage()" class="message-form">
+        <mat-form-field appearance="outline" class="message-input">
+          <mat-label>Message</mat-label>
+          <input
+            matInput
+            formControlName="content"
+            placeholder="Type a message..."
+            (keydown)="onTyping($event)"
+            (keyup)="onTyping($event)">
+        </mat-form-field>
+        <button mat-raised-button color="primary" type="submit" [disabled]="messageForm.invalid">
+          <mat-icon>send</mat-icon>
+        </button>
+      </form>
+    </mat-card-content>
+  </mat-card>
+</div>

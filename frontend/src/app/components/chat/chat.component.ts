@@ -14,6 +14,7 @@ import { Subscription } from 'rxjs';
 import { WebsocketService, ChatMessage } from '../../services/websocket.service';
 import { AuthService } from '../../services/auth.service';
 import { Router } from '@angular/router';
+import { MessageService } from '../../services/message.service';
 
 @Component({
   selector: 'app-chat',
@@ -30,160 +31,32 @@ import { Router } from '@angular/router';
     MatIconModule,
     MatMenuModule
   ],
-  template: `
-    <div class="chat-container">
-      <mat-card class="chat-card">
-        <mat-card-header>
-          <mat-card-title>
-            <div class="title-row">
-              <span>Chat Room: {{currentRoom || 'General'}}</span>
-              <div class="header-actions">
-                <button mat-icon-button [matMenuTriggerFor]="menu">
-                  <mat-icon>more_vert</mat-icon>
-                </button>
-                <mat-menu #menu="matMenu">
-                  <button mat-menu-item (click)="joinRoom('general')">Join General Room</button>
-                  <button mat-menu-item (click)="joinRoom('random')">Join Random Room</button>
-                  <button mat-menu-item (click)="logout()">Logout</button>
-                </mat-menu>
-              </div>
-            </div>
-          </mat-card-title>
-        </mat-card-header>
-
-        <mat-card-content>
-          <div class="messages-container">
-            <mat-list role="list">
-              <mat-list-item *ngFor="let message of messages" role="listitem" class="message-item">
-                <div class="message" [ngClass]="{'my-message': message.sender === currentUser?.username}">
-                  <div class="message-header">
-                    <span class="sender">{{message.sender}}</span>
-                    <span class="timestamp">{{message.timestamp | date:'short'}}</span>
-                  </div>
-                  <div class="message-content">
-                    {{message.content}}
-                  </div>
-                </div>
-              </mat-list-item>
-            </mat-list>
-          </div>
-
-          <mat-divider></mat-divider>
-
-          <form [formGroup]="messageForm" (ngSubmit)="sendMessage()" class="message-form">
-            <mat-form-field appearance="outline" class="message-input">
-              <mat-label>Message</mat-label>
-              <input matInput formControlName="content" placeholder="Type a message...">
-            </mat-form-field>
-            <button mat-raised-button color="primary" type="submit" [disabled]="messageForm.invalid">
-              <mat-icon>send</mat-icon>
-            </button>
-          </form>
-        </mat-card-content>
-      </mat-card>
-    </div>
-  `,
-  styles: [`
-    .chat-container {
-      display: flex;
-      justify-content: center;
-      padding: 20px;
-      height: 100vh;
-      background-color: #f5f5f5;
-    }
-
-    .chat-card {
-      width: 100%;
-      max-width: 800px;
-      height: 80vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .title-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      width: 100%;
-    }
-
-    .header-actions {
-      display: flex;
-    }
-
-    .messages-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      height: calc(80vh - 200px);
-    }
-
-    .message-item {
-      height: auto !important;
-      margin-bottom: 8px;
-    }
-
-    .message {
-      padding: 8px 12px;
-      border-radius: 8px;
-      background-color: #f1f1f1;
-      max-width: 70%;
-    }
-
-    .my-message {
-      background-color: #d1e7ff;
-      margin-left: auto;
-    }
-
-    .message-header {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 4px;
-      font-size: 0.8em;
-    }
-
-    .sender {
-      font-weight: bold;
-    }
-
-    .timestamp {
-      color: #666;
-    }
-
-    .message-content {
-      word-break: break-word;
-    }
-
-    .message-form {
-      display: flex;
-      margin-top: 10px;
-    }
-
-    .message-input {
-      flex: 1;
-      margin-right: 10px;
-    }
-  `]
+  templateUrl: './chat.component.html',  // External template
+  styleUrls: ['./chat.component.scss']   // External styles
 })
 export class ChatComponent implements OnInit, OnDestroy {
   messageForm: FormGroup;
   messages: ChatMessage[] = [];
   currentRoom: string = 'general';
   currentUser: any = null;
+  onlineUsers: {username: string, online: boolean}[] = [];
+  isSomeoneTyping = false;
+  typingUsername = '';
 
-  private messagesSubscription?: Subscription;
-  private userSubscription?: Subscription;
+  private messagesSubscription!: Subscription;
+  private userSubscription!: Subscription;
+  private presenceSubscription!: Subscription;
+  private typingSubscription!: Subscription;
 
   constructor(
-    private formBuilder: FormBuilder,
+    private fb: FormBuilder,
     private websocketService: WebsocketService,
     private authService: AuthService,
+    private messageService: MessageService,
     private router: Router,
     private snackBar: MatSnackBar
   ) {
-    this.messageForm = this.formBuilder.group({
+    this.messageForm = this.fb.group({
       content: ['', [Validators.required]]
     });
   }
@@ -197,35 +70,58 @@ export class ChatComponent implements OnInit, OnDestroy {
       this.messages = messages;
     });
 
-    // Join the default room
-    this.joinRoom('general');
+    this.presenceSubscription = this.websocketService.presence$.subscribe(users => {
+      this.onlineUsers = users;
+    });
+
+    this.typingSubscription = this.websocketService.typing$.subscribe(typingEvent => {
+      if (typingEvent) {
+        this.isSomeoneTyping = typingEvent.typing;
+        this.typingUsername = typingEvent.username;
+      } else {
+        this.isSomeoneTyping = false;
+      }
+    });
+
+    this.joinRoom(this.currentRoom);
+    this.loadInitialMessages();
   }
 
-  ngOnDestroy(): void {
-    this.messagesSubscription?.unsubscribe();
-    this.userSubscription?.unsubscribe();
-    this.websocketService.disconnect();
+  loadInitialMessages(): void {
+    this.messageService.getMessages(this.currentRoom, 0, 20)
+      .subscribe(messages => {
+        this.messages = messages.reverse();
+      });
   }
 
   joinRoom(roomId: string): void {
     this.currentRoom = roomId;
     this.websocketService.joinRoom(roomId);
-    this.messages = []; // Clear messages when joining a new room
+    this.loadInitialMessages();
   }
 
   sendMessage(): void {
     if (this.messageForm.valid && this.currentUser) {
-      const content = this.messageForm.value.content;
-
       const message: ChatMessage = {
-        content: content,
+        content: this.messageForm.value.content,
         sender: this.currentUser.username,
-        roomId: this.currentRoom
+        roomId: this.currentRoom,
+        timestamp: new Date().toISOString()
       };
-
       this.websocketService.sendMessage(message);
       this.messageForm.reset();
     }
+  }
+
+  onTyping(event: any): void {
+    this.websocketService.sendTyping(event.target.value.length > 0);
+  }
+
+  ngOnDestroy(): void {
+    this.messagesSubscription?.unsubscribe();
+    this.userSubscription?.unsubscribe();
+    this.presenceSubscription?.unsubscribe();
+    this.typingSubscription?.unsubscribe();
   }
 
   logout(): void {
