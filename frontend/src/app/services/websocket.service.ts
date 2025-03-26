@@ -20,36 +20,32 @@ export class WebsocketService {
   private messagesSubject = new BehaviorSubject<ChatMessage[]>([]);
   public messages$ = this.messagesSubject.asObservable();
 
+  private presenceSubject = new BehaviorSubject<{username: string, online: boolean}[]>([]);
+  public presence$ = this.presenceSubject.asObservable();
+
+  private typingSubject = new BehaviorSubject<{username: string, typing: boolean} | null>(null);
+  public typing$ = this.typingSubject.asObservable();
+
   private roomSubscription?: StompSubscription;
   private currentRoom: string = '';
 
   constructor(private authService: AuthService) {
     this.initializeWebSocketClient();
-    this.initializePresenceTracking();
-  }
-
-  private presenceSubject = new BehaviorSubject<{username: string, online: boolean}[]>([]);
-  public presence$ = this.presenceSubject.asObservable();
-
-  private initializePresenceTracking() {
-    this.client.subscribe('/topic/presence', (message) => {
-      const { username, status } = JSON.parse(message.body);
-      const current = this.presenceSubject.value.filter(u => u.username !== username);
-      this.presenceSubject.next([...current, { username, online: status === 'online' }]);
-    });
   }
 
   private initializeWebSocketClient(): void {
     this.client = new Client({
       brokerURL: environment.wsUrl,
       connectHeaders: {},
-      debug: function (str) {
-        console.log('STOMP: ' + str);
-      }
+      debug: (str) => console.log('STOMP: ' + str),
+      reconnectDelay: 5000,
+      heartbeatIncoming: 4000,
+      heartbeatOutgoing: 4000
     });
 
     this.client.onConnect = () => {
       console.log('Connected to WebSocket');
+      this.initializePresenceTracking();
     };
 
     this.client.onStompError = (frame) => {
@@ -59,23 +55,37 @@ export class WebsocketService {
     this.client.activate();
   }
 
+  private initializePresenceTracking(): void {
+    this.client.subscribe('/topic/presence', (message: IMessage) => {
+      const { username, status } = JSON.parse(message.body);
+      const current = this.presenceSubject.value.filter(u => u.username !== username);
+      this.presenceSubject.next([...current, { username, online: status === 'online' }]);
+    });
+  }
+
   joinRoom(roomId: string): void {
-    // Unsubscribe from previous room if any
     if (this.roomSubscription) {
       this.roomSubscription.unsubscribe();
     }
 
     this.currentRoom = roomId;
+    this.messagesSubject.next([]);
 
-    // Subscribe to the new room
-    this.roomSubscription = this.client.subscribe(`/topic/chat/${roomId}`, (message: IMessage) => {
-      const chatMessage: ChatMessage = JSON.parse(message.body);
-      const messages = this.messagesSubject.value;
-      this.messagesSubject.next([...messages, chatMessage]);
-    });
+    this.roomSubscription = this.client.subscribe(
+      `/topic/chat/${roomId}`,
+      (message: IMessage) => {
+        const chatMessage: ChatMessage = JSON.parse(message.body);
+        const messages = this.messagesSubject.value;
+        this.messagesSubject.next([...messages, chatMessage]);
+      }
+    );
 
-    // Load previous messages for this room
-    // This would be implemented via a REST API call
+    this.client.subscribe(
+      `/topic/typing/${roomId}`,
+      (message: IMessage) => {
+        this.typingSubject.next(JSON.parse(message.body));
+      }
+    );
   }
 
   sendMessage(message: ChatMessage): void {
@@ -86,6 +96,19 @@ export class WebsocketService {
       });
     } else {
       console.error('WebSocket not connected');
+    }
+  }
+
+  sendTyping(isTyping: boolean): void {
+    if (this.client.connected && this.currentRoom) {
+      this.client.publish({
+        destination: '/app/chat.typing',
+        body: JSON.stringify({
+          roomId: this.currentRoom,
+          username: this.authService.currentUserValue?.username,
+          typing: isTyping
+        })
+      });
     }
   }
 
