@@ -25,6 +25,18 @@ export class WebsocketService {
 
   constructor(private authService: AuthService) {
     this.initializeWebSocketClient();
+    this.initializePresenceTracking();
+  }
+
+  private presenceSubject = new BehaviorSubject<{username: string, online: boolean}[]>([]);
+  public presence$ = this.presenceSubject.asObservable();
+
+  private initializePresenceTracking() {
+    this.client.subscribe('/topic/presence', (message) => {
+      const { username, status } = JSON.parse(message.body);
+      const current = this.presenceSubject.value.filter(u => u.username !== username);
+      this.presenceSubject.next([...current, { username, online: status === 'online' }]);
+    });
   }
 
   private initializeWebSocketClient(): void {

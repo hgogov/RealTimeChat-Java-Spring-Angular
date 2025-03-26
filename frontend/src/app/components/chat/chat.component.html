@@ -1,1 +1,7 @@
-<p>chat works!</p>
+<mat-list>
+  <mat-list-item *ngFor="let user of (presence$ | async)">
+    <span [class.online]="user.online" [class.offline]="!user.online">
+      {{ user.username }}
+    </span>
+  </mat-list-item>
+</mat-list>

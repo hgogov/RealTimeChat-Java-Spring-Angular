@@ -75,3 +75,8 @@ jwt:
   secret: BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=
   expiration:
     ms: 86400000 # 24 hours
+
+# Redis Configuration
+redis:
+  host: localhost
+  port: 6379

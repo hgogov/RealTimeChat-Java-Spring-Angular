@@ -31,6 +31,7 @@ dependencies {
 	implementation 'com.fasterxml.jackson.core:jackson-databind' // For JSON parsing
 	implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310' // For Java 8 date/time
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+	implementation 'org.springframework.session:spring-session-data-redis'
 	runtimeOnly 'org.postgresql:postgresql'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.kafka:spring-kafka-test'
