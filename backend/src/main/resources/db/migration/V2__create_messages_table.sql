@@ -3,5 +3,5 @@ CREATE TABLE messages (
     content TEXT NOT NULL,
     sender VARCHAR(50) NOT NULL,
     room_id VARCHAR(50) NOT NULL,
-    timestamp TIMESTAMP NOT NULL
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL
 );
