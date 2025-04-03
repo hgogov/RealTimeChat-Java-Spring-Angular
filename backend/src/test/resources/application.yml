@@ -1,61 +1,65 @@
 spring:
-  flyway:
-    enabled: false  # Disable Flyway for tests (using H2 in-memory)
-
   datasource:
-    url: jdbc:h2:mem:testdb
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE # Keep DB alive for test duration
     driver-class-name: org.h2.Driver
     username: sa
-    password:  # Empty password for H2
+    password: ""
 
   jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
-      ddl-auto: create-drop  # Create and drop schema for each test run
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
 
-  kafka:
-    # bootstrap-servers omitted since @EmbeddedKafka will set it dynamically
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-    consumer:
-      group-id: chat-backend-group
-      auto-offset-reset: earliest
-      enable-auto-commit: false  # Manual acknowledgment
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
-      properties:
-        spring:
-          deserializer:
-            value:
-              delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
-          json:
-            trusted:
-              packages: "com.chatapp.backend.model"  # Updated to match your package
-            value.default.type: "com.chatapp.backend.model.ChatMessage"  # Correct package
-        session.timeout.ms: 60000
-        heartbeat.interval.ms: 15000
+  # --- Flyway ---
+  flyway:
+    enabled: false
 
   redis:
     host: localhost
     port: 6379
 
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      group-id: test-chat-backend-group
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: "com.chatapp.backend.model"
+        spring.json.value.default.type: "com.chatapp.backend.model.ChatMessage"
+    listener:
+      ack-mode: manual
+
+  # --- Test Logging ---
   logging:
     level:
-      org:
-        hibernate: DEBUG
-        springframework: DEBUG
-      com.fasterxml.jackson: DEBUG
-      org.apache.kafka: DEBUG
-      org.springframework.kafka: DEBUG
-      com.chatapp.backend.service.KafkaConsumerService: DEBUG
+      org.springframework.test: INFO
+      org.springframework.boot.test: INFO
+      org.springframework.security: INFO
+      org.hibernate.SQL: DEBUG
+      org.hibernate.type.descriptor.sql.BasicBinder: TRACE
       com.chatapp.backend: DEBUG
-      org.springframework.boot: INFO
 
+# --- Kafka Topics (keep consistent with main config) ---
 kafka:
   topics:
-    chat-messages: chat-messages  # Topic name for Kafka messages
+    chat-messages: chat-messages-test
 
+# --- JWT for Tests ---
 jwt:
-  secret: test-secret-for-jwt-validation-only-12345  # Test-specific secret
+  secret: BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=
   expiration:
-    ms: 86400000  # 24 hours
+    ms: 600000
+
+
