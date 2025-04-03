@@ -1,8 +1,11 @@
 package com.chatapp.backend.config;
 
+import com.chatapp.backend.interceptor.AuthChannelInterceptor;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.converter.MessageConverter;
+import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -16,23 +19,31 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public boolean configureMessageConverters(List<MessageConverter> messageConverters) {
-        // Add JSON message converter
         messageConverters.add(new MappingJackson2MessageConverter());
-        return false; // Do not add default converters
+        return false;
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        // Enable a simple in-memory message broker
-        config.enableSimpleBroker("/topic"); // Prefix for subscribing to topics
-        config.setApplicationDestinationPrefixes("/app"); // Prefix for sending messages
+        config.enableSimpleBroker("/topic", "/queue", "/topic/presence.list");
+        config.setApplicationDestinationPrefixes("/app");
+        config.setUserDestinationPrefix("/user");
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // Register the WebSocket endpoint
-        registry.addEndpoint("/chat-websocket")
+        registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*")
-                .withSockJS(); // Fallback for browsers that don't support WebSocket
+                .withSockJS();
+    }
+
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(authChannelInterceptor());
+    }
+
+    @Bean
+    public AuthChannelInterceptor authChannelInterceptor() {
+        return new AuthChannelInterceptor();
     }
 }
