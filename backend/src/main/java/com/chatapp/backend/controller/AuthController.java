@@ -5,9 +5,11 @@ import com.chatapp.backend.repository.UserRepository;
 import com.chatapp.backend.service.CustomUserDetailsService;
 import com.chatapp.backend.utils.JwtUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,7 +31,7 @@ public class AuthController {
     private AuthenticationManager authenticationManager;
 
     @Autowired
-    private JwtUtils jwtUtils; // Inject JwtUtils
+    private JwtUtils jwtUtils;
 
     @Autowired
     private UserRepository userRepository;
@@ -37,18 +39,28 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<String> register(@RequestBody User user) {
         user.setPassword(passwordEncoder.encode(user.getPassword()));
-        userRepository.save(user);
+        userRepository.saveAndFlush(user);
+        System.out.println(">>> User registration saved and flushed for: " + user.getUsername());
         return ResponseEntity.ok("User registered!");
     }
 
     @PostMapping("/login")
     public ResponseEntity<String> login(@RequestBody User user) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(user.getUsername(), user.getPassword())
-        );
-        // Use CustomUserDetailsService to load UserDetails
-        UserDetails userDetails = customUserDetailsService.loadUserByUsername(user.getUsername());
-        String token = jwtUtils.generateToken(userDetails);
-        return ResponseEntity.ok(token);
+        System.out.println(">>> Attempting login for user: " + user.getUsername()); // ADD LOG
+        try {
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(user.getUsername(), user.getPassword())
+            );
+            UserDetails userDetails = customUserDetailsService.loadUserByUsername(user.getUsername());
+            String token = jwtUtils.generateToken(userDetails);
+            return ResponseEntity.ok(token);
+        } catch (AuthenticationException e) {
+            System.err.println(">>> Authentication failed for user: " + user.getUsername() + " - " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
+        } catch (Exception e) {
+            System.err.println(">>> Unexpected error during login for user: " + user.getUsername());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Login failed due to server error");
+        }
     }
 }
