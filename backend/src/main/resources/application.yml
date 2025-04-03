@@ -5,9 +5,9 @@ spring:
 
   # Database Configuration
   datasource:
-    driver-class-name: org.postgresql.Driver
-    username: chat_user
-    password: chat_password
+#    driver-class-name: org.postgresql.Driver
+#    username: chat_user
+#    password: chat_password
     url: jdbc:postgresql://localhost:5432/chatdb
 
   # Flyway Configuration
@@ -27,7 +27,7 @@ spring:
 
   # Kafka Configuration
   kafka:
-    bootstrap-servers: localhost:29092 # Kafka server (from docker-compose)
+#    bootstrap-servers: localhost:29092 # Kafka server (from docker-compose)
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -60,6 +60,8 @@ spring:
       org.apache.kafka: DEBUG
       org.springframework.kafka: DEBUG
       com.chatapp.backend.service.KafkaConsumerService: DEBUG
+      com.chatapp.backend: DEBUG
+      org.springframework.boot: INFO
 
   # Jackson Configuration (for JSON serialization/deserialization)
   jackson:
@@ -76,7 +78,7 @@ jwt:
   expiration:
     ms: 86400000 # 24 hours
 
-# Redis Configuration
-redis:
-  host: localhost
-  port: 6379
+## Redis Configuration
+#redis:
+#  host: localhost
+#  port: 6379
