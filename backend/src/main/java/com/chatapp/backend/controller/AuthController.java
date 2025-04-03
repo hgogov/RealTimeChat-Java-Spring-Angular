@@ -4,6 +4,12 @@ import com.chatapp.backend.model.User;
 import com.chatapp.backend.repository.UserRepository;
 import com.chatapp.backend.service.CustomUserDetailsService;
 import com.chatapp.backend.utils.JwtUtils;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/auth")
+@Tag(name = "Authentication", description = "User Registration and Login")
 public class AuthController {
 
     @Autowired
@@ -36,6 +43,13 @@ public class AuthController {
     @Autowired
     private UserRepository userRepository;
 
+    @Operation(summary = "Register a new user")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "User registered successfully",
+                    content = @Content(mediaType = "text/plain", schema = @Schema(implementation = String.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid user data provided"),
+            @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
     @PostMapping("/register")
     public ResponseEntity<String> register(@RequestBody User user) {
         user.setPassword(passwordEncoder.encode(user.getPassword()));
@@ -44,9 +58,16 @@ public class AuthController {
         return ResponseEntity.ok("User registered!");
     }
 
+    @Operation(summary = "Authenticate a user and receive a JWT")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Authentication successful, JWT returned",
+                    content = @Content(mediaType = "text/plain", schema = @Schema(implementation = String.class))),
+            @ApiResponse(responseCode = "401", description = "Invalid credentials"),
+            @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
     @PostMapping("/login")
     public ResponseEntity<String> login(@RequestBody User user) {
-        System.out.println(">>> Attempting login for user: " + user.getUsername()); // ADD LOG
+        System.out.println(">>> Attempting login for user: " + user.getUsername());
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(user.getUsername(), user.getPassword())
