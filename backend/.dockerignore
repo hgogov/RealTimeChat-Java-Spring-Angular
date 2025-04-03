@@ -1,0 +1,28 @@
+# Git files
+.git/
+.gitignore
+
+# Editor/IDE specific
+.editorconfig
+.idea/
+.vscode/
+
+# Gradle specific
+.gradle/
+build/
+# Add other potential Gradle output dirs if applicable
+# bin/
+
+# Log files
+*.log
+logs/
+
+# Documentation (Optional)
+*.md
+
+# Local environment variables
+.env*
+
+# OS specific
+.DS_Store
+Thumbs.db
