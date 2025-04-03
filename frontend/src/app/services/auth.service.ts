@@ -14,11 +14,13 @@ export class AuthService {
 
   constructor(private http: HttpClient) {}
 
+  get currentUserValue() {
+    return this.currentUserSubject.value;
+  }
+
   login(username: string, password: string): Observable<any> {
-      // Add responseType: 'text' to handle plain text responses
       const options = {
         responseType: 'text' as 'json',
-        // Prevent Angular from trying to parse empty responses
         headers: new HttpHeaders({
           'Accept': 'text/plain, application/json'
         })
@@ -36,10 +38,7 @@ export class AuthService {
             return tokenValue;
           }),
           catchError((error: any) => {
-            // If server returned 200 but parsing failed, it might be a valid response
-            // that we just need to handle differently
             if (error.status === 200 && error.statusText === 'OK') {
-              // Try to get the raw response text if possible
               const token = error.error?.text || '';
               if (token) {
                 this.storeToken(token);
@@ -54,11 +53,11 @@ export class AuthService {
       }
 
   register(username: string, email: string, password: string): Observable<string> {
-    return this.http.post<string>(`${environment.apiUrl}/api/auth/register`, {
+    return this.http.post(`${environment.apiUrl}/api/auth/register`, {
       username,
       email,
       password
-    });
+    }, { responseType: 'text' });
   }
 
   logout(): void {
