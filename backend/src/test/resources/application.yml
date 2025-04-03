@@ -35,6 +35,10 @@ spring:
         session.timeout.ms: 60000
         heartbeat.interval.ms: 15000
 
+  redis:
+    host: localhost
+    port: 6379
+
   logging:
     level:
       org:
@@ -44,6 +48,8 @@ spring:
       org.apache.kafka: DEBUG
       org.springframework.kafka: DEBUG
       com.chatapp.backend.service.KafkaConsumerService: DEBUG
+      com.chatapp.backend: DEBUG
+      org.springframework.boot: INFO
 
 kafka:
   topics:
