@@ -4,3 +4,25 @@ spring:
     username: chat_user
     password: chat_password
     driver-class-name: org.postgresql.Driver
+
+  redis:
+    host: redis
+    port: 6379
+
+  kafka:
+    bootstrap-servers: kafka:9092
+
+  session:
+    store-type: redis
+    redis:
+      host: redis  # Explicit for session
+      port: 6379   # Explicit for session
+
+  logging:
+    level:
+      com.chatapp.backend: DEBUG
+      org.springframework.boot: INFO
+      org.springframework.data.redis: DEBUG
+      io.lettuce.core: DEBUG
+      org.springframework.session: DEBUG
+      org.springframework.security: DEBUG
