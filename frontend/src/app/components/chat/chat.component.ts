@@ -1,6 +1,10 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, ChangeDetectorRef, ApplicationRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
+import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { Subscription, Subject, filter, distinctUntilChanged, takeUntil, debounceTime, timer } from 'rxjs';
+
+// Material Modules
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -10,12 +14,15 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { Subscription, Subject } from 'rxjs';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatTooltipModule } from '@angular/material/tooltip';
+
+// App Services and Interfaces
 import { WebsocketService, ChatMessage, PresenceEvent, TypingEvent } from '../../services/websocket.service';
 import { AuthService } from '../../services/auth.service';
-import { Router } from '@angular/router';
 import { MessageService } from '../../services/message.service';
-import { filter, distinctUntilChanged, debounceTime, takeUntil, skip } from 'rxjs/operators';
+import { ChatRoomService, ChatRoom } from '../../services/chat-room.service';
+import { CreateRoomDialogComponent } from '../create-room-dialog/create-room-dialog.component';
 
 @Component({
   selector: 'app-chat',
@@ -31,7 +38,9 @@ import { filter, distinctUntilChanged, debounceTime, takeUntil, skip } from 'rxj
     MatDividerModule,
     MatIconModule,
     MatMenuModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    MatDialogModule,
+    MatTooltipModule,
   ],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss']
@@ -39,19 +48,17 @@ import { filter, distinctUntilChanged, debounceTime, takeUntil, skip } from 'rxj
 export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   messageForm: FormGroup;
   messages: ChatMessage[] = [];
-  currentRoom: string = 'general';
+  currentRoomName: string | null = null;
   currentUser: { username: string } | null = null;
   onlineUsers: PresenceEvent[] = [];
   isSomeoneTyping = false;
   typingUsername = '';
+  availableRooms: ChatRoom[] = [];
 
-  // For scrolling
   @ViewChild('messagesContainer') private messagesContainer!: ElementRef;
   private shouldScrollToBottom = true;
-
   private destroy$ = new Subject<void>();
   private typingTimeout: any;
-  private roomMessagesSubscription?: Subscription;
 
   constructor(
     private fb: FormBuilder,
@@ -61,7 +68,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     private router: Router,
     private snackBar: MatSnackBar,
     private cdRef: ChangeDetectorRef,
-    private appRef: ApplicationRef
+    private dialog: MatDialog,
+    private chatRoomService: ChatRoomService
   ) {
     this.messageForm = this.fb.group({
       content: ['']
@@ -72,62 +80,27 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.setupUserSubscription();
     this.setupPresenceSubscription();
     this.setupTypingSubscription();
-    this.joinRoom(this.currentRoom); // Join room initializes message loading and subscription
+    this.setupRoomSubscription();
+    this.setupMessageSubscription();
+    this.loadUserRooms();
   }
 
-  // --- Scrolling Logic ---
-  ngAfterViewChecked(): void {
-    if (this.shouldScrollToBottom) {
-        this.scrollToBottom();
-        this.shouldScrollToBottom = false;
-    }
-  }
-
-  private scrollToBottom(): void {
-    try {
-        this.messagesContainer.nativeElement.scrollTop = this.messagesContainer.nativeElement.scrollHeight;
-    } catch (err) {
-        console.error("Could not scroll to bottom:", err);
-    }
-  }
-  // --- End Scrolling Logic ---
-
-
-  /* Typing Indicator Methods */
-  onTyping(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.websocketService.sendTyping(input.value.length > 0);
-  }
-
-  trackByMessageId(index: number, message: ChatMessage): number | string {
-    return message.id ?? message.timestamp ?? index;
-  }
-
-  onMessageInput(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const isTyping = input.value.length > 0;
-
-    // Send typing status immediately
-    this.websocketService.sendTyping(isTyping);
-
-    // Debounce sending 'stop typing'
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     if (this.typingTimeout) {
       clearTimeout(this.typingTimeout);
     }
-
-    if (isTyping) {
-      this.typingTimeout = setTimeout(() => {
-        this.websocketService.sendTyping(false);
-      }, 2000); // Send 'stop typing' after 2 seconds of inactivity
-    }
   }
 
-  /* Core Chat Methods */
+  // --- Setup Methods ---
+
   private setupUserSubscription(): void {
     this.authService.currentUser$
       .pipe(takeUntil(this.destroy$))
       .subscribe(user => {
         this.currentUser = user;
+        this.cdRef.detectChanges();
       });
   }
 
@@ -135,58 +108,127 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.websocketService.presence$
       .pipe(takeUntil(this.destroy$))
       .subscribe((users: PresenceEvent[]) => {
-        console.log('[ChatComponent] Received presence update via observable:', users);
-        this.onlineUsers = users;
+        const currentUsername = this.currentUser?.username;
+        this.onlineUsers = users.filter(u => u.username !== currentUsername);
         this.cdRef.detectChanges();
       });
   }
 
   private setupTypingSubscription(): void {
-    this.websocketService.typing$
-      .pipe(
-        takeUntil(this.destroy$),
-        filter((event: TypingEvent | null): event is TypingEvent =>
-          !!event &&
-          event.roomId === this.currentRoom &&
-          event.username !== this.currentUser?.username // Ignore self-typing
-        ),
-        distinctUntilChanged((prev, curr) => // Only emit if typing status or user changes
-          prev.username === curr.username && prev.typing === curr.typing
-        ),
-      )
-      .subscribe((event: TypingEvent) => {
-         this.isSomeoneTyping = event.typing;
-         this.typingUsername = event.typing ? event.username : '';
-      });
+      this.websocketService.typing$
+        .pipe(
+          takeUntil(this.destroy$),
+          filter((event: TypingEvent | null): event is TypingEvent =>
+            !!event &&
+            event.roomId === this.currentRoomName &&
+            event.username !== this.currentUser?.username
+          ),
+          distinctUntilChanged((prev, curr) =>
+            prev.username === curr.username && prev.typing === curr.typing
+          ),
+        )
+        .subscribe((event: TypingEvent) => {
+           this.isSomeoneTyping = event.typing;
+           this.typingUsername = event.typing ? event.username : '';
+           this.cdRef.detectChanges();
+        });
   }
 
-  loadInitialMessages(): void {
-    console.log(`[ChatComponent] loadInitialMessages called for room: ${this.currentRoom}`);
-    this.messages = [];
+  private setupRoomSubscription(): void {
+    this.websocketService.currentRoom$
+        .pipe(takeUntil(this.destroy$))
+        .subscribe(roomName => {
+            const previousRoom = this.currentRoomName;
+            this.currentRoomName = roomName;
+            console.log(`[ChatComponent] Current room changed to: ${roomName}`);
+            if (roomName && roomName !== previousRoom) {
+                this.messages = [];
+                this.isSomeoneTyping = false;
+                this.typingUsername = '';
+                this.loadInitialMessages(roomName);
+            } else if (!roomName) {
+                 this.messages = [];
+            }
+             this.cdRef.detectChanges();
+        });
+  }
+
+  private setupMessageSubscription(): void {
+        this.websocketService.messages$
+            .pipe(
+                takeUntil(this.destroy$),
+                filter(msg => !!msg && msg.roomId === this.currentRoomName)
+            )
+            .subscribe({
+                next: (newMessage: ChatMessage) => {
+                    if (!this.messages.some(m => m.id === newMessage.id && m.timestamp === newMessage.timestamp)) {
+                        this.messages = [...this.messages, newMessage];
+                        this.shouldScrollToBottom = true;
+                        this.cdRef.detectChanges();
+                    } else {
+                         console.log('[ChatComponent] Duplicate message ignored:', newMessage.id);
+                    }
+                },
+                error: (err: any) => {
+                    console.error('[ChatComponent] Error on websocket messages$ stream:', err);
+                    this.snackBar.open('Error receiving messages', 'Close', { duration: 3000 });
+                 }
+            });
+  }
+
+  // --- Data Loading ---
+
+  loadUserRooms(): void {
+      console.log('[ChatComponent] Loading user rooms...');
+      this.chatRoomService.getUserRooms()
+          .pipe(takeUntil(this.destroy$))
+          .subscribe({
+              next: (rooms) => {
+                  console.log('[ChatComponent] Received user rooms:', rooms);
+                  this.availableRooms = rooms.sort((a, b) => a.name.localeCompare(b.name));
+
+                  if (!this.currentRoomName && rooms.length > 0) {
+                      const generalRoom = rooms.find(r => r.name.toLowerCase() === 'general');
+                      const roomToJoin = generalRoom || rooms[0];
+                      timer(100).pipe(takeUntil(this.destroy$)).subscribe(() => {
+                           this.selectRoom(roomToJoin.name);
+                      });
+                  } else if (this.currentRoomName && !rooms.some(r => r.name === this.currentRoomName)) {
+                      this.selectRoom(rooms[0]?.name);
+                  } else if (rooms.length === 0) {
+                       console.log('[ChatComponent] User is not in any rooms.');
+                  }
+                  this.cdRef.detectChanges();
+              },
+              error: (err: any) => {
+                  console.error('[ChatComponent] Error loading user rooms:', err);
+                  this.snackBar.open('Failed to load your chat rooms', 'Close', { duration: 3000 });
+              }
+          });
+  }
+
+  loadInitialMessages(roomId: string): void {
+    if (!roomId) return;
+    console.log(`[ChatComponent] loadInitialMessages called for room: ${roomId}`);
     this.shouldScrollToBottom = true;
 
-    this.messageService.getMessages(this.currentRoom, 0, 50)
+    this.messageService.getMessages(roomId, 0, 50)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (messagesPage: any) => {
-            console.log('[ChatComponent] Received historical messages response:', messagesPage);
-
             const messagesArray = Array.isArray(messagesPage?.content) ? messagesPage.content :
                                   Array.isArray(messagesPage) ? messagesPage : [];
-
-            console.log('[ChatComponent] Extracted messages array:', messagesArray);
 
             if (messagesArray.length > 0) {
                 this.messages = [...messagesArray].sort((a, b) =>
                     new Date(a.timestamp!).getTime() - new Date(b.timestamp!).getTime()
                 );
-                console.log('[ChatComponent] Sorted messages:', this.messages);
             } else {
                 this.messages = [];
-                console.log('[ChatComponent] No historical messages found.');
             }
             this.shouldScrollToBottom = true;
             this.cdRef.detectChanges();
+            timer(0).subscribe(() => this.scrollToBottom());
         },
         error: (err: any) => {
           this.snackBar.open('Failed to load messages', 'Close', { duration: 3000 });
@@ -195,99 +237,108 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       });
   }
 
-  joinRoom(roomId: string): void {
-    console.log(`[ChatComponent] joinRoom called for: ${roomId}`);
-    // 1. Unsubscribe from previous room's message stream if exists
-    if (this.roomMessagesSubscription) {
-      this.roomMessagesSubscription.unsubscribe();
-    }
+  // --- UI Actions ---
 
-    this.currentRoom = roomId;
-    this.messages = []; // Clear messages immediately for UI responsiveness
-    this.isSomeoneTyping = false; // Reset typing indicator
-    this.typingUsername = '';
-
-    // 2. Tell the service to join the new room (sets up internal STOMP subs)
-    try {
-       this.websocketService.joinRoom(roomId);
-    } catch (error) {
-        this.snackBar.open('Failed to initiate joining room', 'Close', { duration: 3000 });
-        console.error('[ChatComponent] Error calling websocketService.joinRoom:', error);
-        return;
-    }
-
-    // 3. Load initial/historical messages for the new room
-    this.loadInitialMessages();
-
-    // 4. Subscribe to NEW messages from WebSocket
-     this.roomMessagesSubscription = this.websocketService.messages$
-       .pipe(
-           takeUntil(this.destroy$),
-           filter(msg => !!msg)
-       )
-       .subscribe({
-         next: (newMessage: ChatMessage) => {
-           console.log('[ChatComponent] Received NEW message via WebSocket:', newMessage);
-           // Avoid adding duplicates if message already loaded via history
-           if (!this.messages.some(m => m.id === newMessage.id)) {
-                this.messages = [...this.messages, newMessage];
-                this.shouldScrollToBottom = true;
-                this.cdRef.detectChanges();
-           } else {
-                console.log('[ChatComponent] Duplicate message ignored:', newMessage.id);
-           }
-         },
-         error: (err: any) => {
-           this.snackBar.open('Error receiving messages', 'Close', { duration: 3000 });
-           console.error('[ChatComponent] Error on websocket messages$ stream:', err);
-         }
-       });
+  selectRoom(roomName: string | null): void {
+      if (roomName && roomName !== this.currentRoomName) {
+          console.log(`[ChatComponent] Selecting room: ${roomName}`);
+          this.websocketService.joinRoom(roomName);
+      } else if (roomName === null && this.currentRoomName) {
+           console.log('[ChatComponent] Deselecting room.');
+           this.websocketService.leaveCurrentRoom();
+           this.currentRoomName = null;
+           this.messages = [];
+           this.cdRef.detectChanges();
+      }
   }
 
   sendMessage(): void {
-    if (this.messageForm.invalid || !this.currentUser) return;
+    if (this.messageForm.invalid || !this.currentUser || !this.currentRoomName) return;
 
-    // Clear local typing indicator immediately
-    if (this.typingTimeout) {
-      clearTimeout(this.typingTimeout);
-      this.typingTimeout = null;
-    }
-     // Send 'stop typing' immediately when sending a message
+    const messageContent = this.messageForm.value.content?.trim();
+    if (!messageContent) return;
+
+    if (this.typingTimeout) clearTimeout(this.typingTimeout);
     this.websocketService.sendTyping(false);
+    this.isSomeoneTyping = false;
 
 
-    const messageContent = this.messageForm.value.content.trim();
-    if (!messageContent) return; // Don't send empty messages
-
-    const message: Omit<ChatMessage, 'sender' | 'timestamp' | 'id'> = {
+    const message: Omit<ChatMessage, 'sender' | 'timestamp' | 'id' | 'roomId'> = {
       content: messageContent,
-      roomId: this.currentRoom,
     };
 
-    try {
-        this.websocketService.sendMessage(message);
-        this.messageForm.reset();
-    } catch(error) {
-         this.snackBar.open('Failed to send message', 'Close', { duration: 3000 });
-         console.error('Error sending message:', error);
+    this.websocketService.sendMessage(message)
+        .then(() => {
+             this.messageForm.reset();
+        })
+        .catch((err: any) => {
+             this.snackBar.open('Failed to send message', 'Close', { duration: 3000 });
+             console.error('[ChatComponent] Error sending message:', err);
+        });
+  }
+
+  // Handle user typing input
+  onMessageInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const isTyping = input.value.length > 0;
+
+    this.websocketService.sendTyping(isTyping);
+
+    // Debounce sending 'stop typing'
+    if (this.typingTimeout) clearTimeout(this.typingTimeout);
+
+    if (isTyping) {
+      this.typingTimeout = setTimeout(() => {
+        this.websocketService.sendTyping(false); // Send stop typing after delay
+      }, 2000); // 2 seconds inactivity threshold
     }
   }
 
-  ngOnDestroy(): void {
-    this.destroy$.next();
-    this.destroy$.complete();
-
-    if (this.roomMessagesSubscription) {
-      this.roomMessagesSubscription.unsubscribe();
-    }
-
-    if (this.typingTimeout) {
-      clearTimeout(this.typingTimeout);
-    }
+  openCreateRoomDialog(): void {
+      const dialogRef = this.dialog.open(CreateRoomDialogComponent, {
+          width: '350px',
+          disableClose: true
+      });
+      dialogRef.afterClosed()
+        .pipe(takeUntil(this.destroy$))
+        .subscribe(result => {
+          console.log('Create Room Dialog closed with result:', result);
+          // Check if the result indicates success and includes the new room
+          if (result?.roomCreated && result?.newRoom) {
+              this.loadUserRooms();
+              timer(200).pipe(takeUntil(this.destroy$)).subscribe(() => {
+                  this.selectRoom(result.newRoom.name);
+              });
+          }
+      });
   }
 
   logout(): void {
     this.authService.logout();
     this.router.navigate(['/login']);
+  }
+
+  // --- Lifecycle Hooks & Helpers ---
+
+  ngAfterViewChecked(): void {
+    if (this.shouldScrollToBottom) {
+        this.scrollToBottom();
+        this.shouldScrollToBottom = false;
+    }
+  }
+
+  private scrollToBottom(): void {
+    if (this.messagesContainer?.nativeElement) {
+        try {
+            const element = this.messagesContainer.nativeElement;
+            element.scrollTop = element.scrollHeight;
+        } catch (err) {
+            console.error("[ChatComponent] Could not scroll to bottom:", err);
+        }
+    }
+  }
+
+  trackByMessageId(index: number, message: ChatMessage): number | string | undefined {
+    return message.id ?? message.timestamp;
   }
 }
