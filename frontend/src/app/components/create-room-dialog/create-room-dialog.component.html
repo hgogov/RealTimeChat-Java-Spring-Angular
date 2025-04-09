@@ -1,0 +1,35 @@
+<h1 mat-dialog-title>Create New Chat Room</h1>
+
+<div mat-dialog-content>
+  <p>Enter a unique name for your new chat room.</p>
+  <form [formGroup]="roomForm" (ngSubmit)="onSubmit()" id="create-room-form">
+    <mat-form-field appearance="outline" style="width: 100%;">
+      <mat-label>Room Name</mat-label>
+      <input matInput formControlName="name" required minlength="3" maxlength="100" cdkFocusInitial>
+      <!-- Error messages -->
+      <mat-error *ngIf="roomForm.get('name')?.hasError('required')">
+        Room name is required.
+      </mat-error>
+      <mat-error *ngIf="roomForm.get('name')?.hasError('whitespace') && !roomForm.get('name')?.hasError('required')">
+        Room name cannot be only whitespace.
+      </mat-error>
+      <mat-error *ngIf="roomForm.get('name')?.hasError('minlength')">
+        Name must be at least {{ roomForm.get('name')?.getError('minlength')?.requiredLength }} characters long.
+      </mat-error>
+      <mat-error *ngIf="roomForm.get('name')?.hasError('maxlength')">
+        Name cannot exceed 100 characters.
+      </mat-error>
+    </mat-form-field>
+  </form>
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-button (click)="onCancelClick()">Cancel</button>
+  <button mat-raised-button
+          color="primary"
+          type="submit"
+          form="create-room-form"
+  [disabled]="roomForm.invalid || isSubmitting">
+  {{ isSubmitting ? 'Creating...' : 'Create Room' }}
+  </button>
+</div>
