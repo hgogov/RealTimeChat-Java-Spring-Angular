@@ -37,17 +37,23 @@ public class ChatController {
     @MessageMapping("/chat.sendMessage")
     public void sendMessage(@Payload ChatMessage message) {
         logger.info("Received message: {}", message);
-        // Send message to Kafka for processing (consumer will broadcast via /topic/chat/{roomId})
+        // Send message to Kafka for processing
         kafkaProducerService.sendMessage(message);
     }
 
     @MessageMapping("/chat.typing")
     public void handleTyping(@Payload TypingEvent typingEvent, SimpMessageHeaderAccessor headerAccessor) {
         String username = headerAccessor.getUser() != null ? headerAccessor.getUser().getName() : "unknown";
+        if (typingEvent.getRoomId() == null || typingEvent.getRoomId().isEmpty()) {
+            logger.warn("Received typing event without roomId from {}: {}", username, typingEvent);
+            return;
+        }
         logger.info("Received typing event: {} from user: {}", typingEvent, username);
 
-        // Broadcast the typing event to others in the room
-        messagingTemplate.convertAndSend("/topic/typing/" + typingEvent.getRoomId(), typingEvent);
+        // Broadcast the typing event to others in the specific room
+        String destination = "/topic/typing/" + typingEvent.getRoomId();
+        logger.info("Broadcasting typing event to destination: {}", destination);
+        messagingTemplate.convertAndSend(destination, typingEvent);
     }
 
     @MessageMapping("/presence.requestList")
@@ -69,7 +75,7 @@ public class ChatController {
         }
 
         System.out.println("Sending presence list back via /topic/presence.list: " + onlineUsersList);
-        // Send the list to a public topic that all clients subscribe to
+
         messagingTemplate.convertAndSend("/topic/presence.list", onlineUsersList);
     }
 }

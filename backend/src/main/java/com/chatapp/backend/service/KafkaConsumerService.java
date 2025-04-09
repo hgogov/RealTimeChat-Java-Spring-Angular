@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+
 @Service
 public class KafkaConsumerService {
 
@@ -25,27 +27,29 @@ public class KafkaConsumerService {
     @KafkaListener(topics = "${kafka.topics.chat-messages}", groupId = "chat-backend-group")
     public void consumeMessage(ChatMessage message, Acknowledgment acknowledgment) {
         try {
-            logger.info("[KafkaConsumerService] Consumed message: {}", message);
+            logger.info("[KafkaConsumerService] Consumed message for room '{}': {}", message.getRoomId(), message);
 
-//            // Simulate a transient failure
-//            if (message.getContent().contains("fail")) {
-//                throw new RuntimeException("Simulated transient failure");
-//            }
-
-            // Save to DB
             ChatMessage savedMessage = messageRepository.save(message);
             logger.info("[KafkaConsumerService] Saved message to DB: {}", savedMessage);
 
-            // Broadcast to WebSocket subscribers
-            messagingTemplate.convertAndSend("/topic/chat/" + savedMessage.getRoomId(), savedMessage);
+            // Broadcast to WebSocket subscribers FOR THE SPECIFIC ROOM
+            String destination = "/topic/chat/" + savedMessage.getRoomId();
+            logger.info("[KafkaConsumerService] Broadcasting message to destination: {}", destination);
+            messagingTemplate.convertAndSend(destination, savedMessage);
 
-            // Acknowledge message after successful processing
             acknowledgment.acknowledge();
         } catch (Exception e) {
             logger.error("[KafkaConsumerService] Error processing message: {}", message, e);
-            // Re-throw to trigger retry/DLQ configured in KafkaConfig
-            throw e;
+            acknowledgment.nack(Duration.ofDays(1000));
         }
+    }
+
+    @KafkaListener(topics = "${kafka.topics.chat-messages}-dlt", groupId = "chat-backend-dlt-group")
+    public void consumeDeadLetterMessage(ChatMessage message, Acknowledgment acknowledgment) {
+        // Handle messages that failed processing permanently
+        logger.error("[DLT Consumer] Received dead-letter message: {}", message);
+        // TODO: Implement alerting or manual intervention logic here
+        acknowledgment.acknowledge(); // Acknowledge DLT message
     }
 
 }
