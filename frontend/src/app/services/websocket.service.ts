@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { Client, IMessage, StompSubscription, StompHeaders, IFrame } from '@stomp/stompjs';
-import { BehaviorSubject, Observable, ReplaySubject, Subject, filter, first, takeUntil, firstValueFrom } from 'rxjs';
+import { BehaviorSubject, Observable, ReplaySubject, Subject, Subscription, filter, first, takeUntil, firstValueFrom, timer } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 import SockJS from 'sockjs-client';
@@ -24,19 +24,20 @@ export interface PresenceEvent {
   online: boolean;
 }
 
-
 @Injectable({
   providedIn: 'root'
 })
 export class WebsocketService implements OnDestroy {
-  private client: Client;
+  private client!: Client;
+  private connectionRetryTimer?: Subscription;
+
   private destroy$ = new Subject<void>();
 
   // Connection state
   private connectionState$ = new ReplaySubject<boolean>(1);
   public isConnected$ = this.connectionState$.asObservable();
 
-  // Message streams
+  // Message streams (Using Subject for single emissions)
   private messagesSubject = new Subject<ChatMessage>();
   public messages$ = this.messagesSubject.asObservable();
 
@@ -47,80 +48,90 @@ export class WebsocketService implements OnDestroy {
   public typing$ = this.typingSubject.asObservable();
 
   // Room management
-  private currentRoom: string | null = null;
-  private roomSubscription?: StompSubscription;
-  private typingSubscription?: StompSubscription;
-  private presenceSubscription?: StompSubscription;
+  private currentRoomSubject = new BehaviorSubject<string | null>(null);
+  public currentRoom$ = this.currentRoomSubject.asObservable();
 
+  // Subscription references
+  private roomMessageSubscription?: StompSubscription;
+  private roomTypingSubscription?: StompSubscription;
+  private presenceSubscription?: StompSubscription;
   private presenceListSubscription?: StompSubscription;
 
   constructor(private authService: AuthService) {
-    this.client = this.createStompClient();
-    this.initializeConnection();
+    this.initializeClient();
+    this.initializeConnectionListener();
     if (this.authService.getToken()) {
-        console.log('[WebSocket] Initial activation attempt on service load.');
-        this.client.activate();
+      this.activateConnection();
     } else {
-        console.log('[WebSocket] No initial token, client remains inactive on load.');
-        this.connectionState$.next(false);
+      this.connectionState$.next(false);
     }
   }
 
-  private createStompClient(): Client {
-      console.log('[WebSocket] Creating STOMP client with SockJS support...');
-      return new Client({
+  private initializeClient(): void {
+    console.log('[WebSocket] Initializing STOMP client...');
+    this.client = new Client({
         webSocketFactory: () => {
            const token = this.authService.getToken();
-           const connector = token ? `?token=${token}` : '';
-           const sockJsUrl = `/ws${connector}`; // Use relative path + token param
+           const connector = token ? `?token=${encodeURIComponent(token)}` : '';
+           const sockJsUrl = `/ws${connector}`;
            console.log(`[WebSocket] SockJS attempting connection to endpoint: ${sockJsUrl}`);
-           // Note: Don't log the full URL with token in production
-           return new SockJS(sockJsUrl);
+           return new SockJS(sockJsUrl, null, { timeout: 15000 });
         },
-
-        debug: (str) => console.debug('[STOMP]', str.length > 150 ? str.substring(0, 150) + '...' : str),
-        reconnectDelay: 5000,
+        debug: (str) => console.debug('[STOMP]', str.substring(0, 150)),
+        reconnectDelay: 5000, // Standard reconnect delay
         heartbeatIncoming: 4000,
         heartbeatOutgoing: 4000,
         onConnect: (frame: IFrame) => this.handleConnect(frame),
         onStompError: (frame: IFrame) => this.handleError(frame),
-        onWebSocketError: (event: Event | any) => this.handleWebsocketError(event),
-        onDisconnect: (frame: IFrame) => this.handleDisconnect(frame)
+        onWebSocketError: (event: Event | CloseEvent | any) => this.handleWebsocketError(event),
+        onDisconnect: (frame: IFrame) => this.handleDisconnect(frame),
       });
-    }
-
-  private getAuthHeaders(): StompHeaders {
-    const token = this.authService.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
-  private initializeConnection(): void {
+  private activateConnection(): void {
+      if (this.client?.active) {
+          console.log('[WebSocket] Client already active.');
+          return;
+      }
+      if (!this.authService.getToken()) {
+          console.warn('[WebSocket] Activation aborted: No auth token found.');
+          return;
+      }
+      console.log('[WebSocket] Activating connection...');
+      this.initializeClient();
+      this.client.activate();
+  }
+
+  // Listen for login/logout events
+  private initializeConnectionListener(): void {
     this.authService.currentUser$
       .pipe(takeUntil(this.destroy$))
       .subscribe(user => {
         if (user && this.authService.getToken()) {
-            if (!this.client.active) {
-                console.log('[WebSocket] User detected, activating connection...');
-                this.client = this.createStompClient();
-                this.client.activate();
+            if (!this.client || !this.client.active) {
+                this.activateConnection();
             }
         } else {
-            if (this.client.active) {
-                console.log('[WebSocket] No user/token, deactivating connection...');
+            if (this.client?.active) {
                 this.disconnect();
             }
         }
       });
   }
 
+  // --- STOMP Event Handlers ---
+
   private handleConnect(frame: IFrame): void {
-    console.log('[WebSocket] Connection established. Frame command:', frame.command);
+    console.log('[WebSocket] Connection established. User:', frame?.headers['user-name']);
     this.connectionState$.next(true);
-    this.initializePresenceTracking();
-    if (this.currentRoom) {
-      console.log(`[WebSocket] Re-joining room after connect: ${this.currentRoom}`);
-      this.subscribeToRoomTopics(this.currentRoom);
+    this.initializePresenceTracking(); // Subscribe to presence topics
+
+    const intendedRoom = this.currentRoomSubject.value;
+    if (intendedRoom) {
+      console.log(`[WebSocket] Re-joining intended room after connect: ${intendedRoom}`);
+      this.joinRoom(intendedRoom); // Call joinRoom which handles subscriptions
     }
+    this.connectionRetryTimer?.unsubscribe();
   }
 
   private handleError(frame: IFrame): void {
@@ -128,92 +139,91 @@ export class WebsocketService implements OnDestroy {
     console.error('[WebSocket] STOMP Error:', errorMessage, 'Headers:', frame.headers);
     this.connectionState$.next(false);
      if (errorMessage.includes('AccessDeniedException') || errorMessage.includes('Authentication Failed')) {
-        console.warn('[WebSocket] Authentication error during STOMP communication. Logging out.');
-        this.authService.logout();
+        console.warn('[WebSocket] Authentication error during STOMP communication. Consider logging out.');
     }
   }
 
-  private handleWebsocketError(event: Event | any): void {
+  private handleWebsocketError(event: Event | CloseEvent | any): void {
       console.error('[WebSocket] WebSocket/SockJS transport error:', event);
       this.connectionState$.next(false);
+      if (!this.client.active) {
+          console.log('[WebSocket] WebSocket error on inactive client. Attempting reactivation soon via reconnectDelay...');
+      }
+      if (event instanceof CloseEvent) {
+          console.error(`[WebSocket] Connection closed: Code=${event.code}, Reason=${event.reason}, Clean=${event.wasClean}`);
+      }
   }
 
   private handleDisconnect(frame: IFrame): void {
-    console.log('[WebSocket] Disconnected. Frame command:', frame.command);
+    console.log('[WebSocket] Disconnected. Frame:', frame?.command);
     this.connectionState$.next(false);
     this.clearSubscriptions();
   }
 
+  // --- Presence Handling ---
+
   private initializePresenceTracking(): void {
-    if (!this.client.connected) return;
-
-    // Unsubscribe from previous subscriptions if they exist
-    if (this.presenceSubscription) {
-      this.presenceSubscription.unsubscribe();
-      console.log('[WebSocket] Unsubscribed from previous presence topic.');
+    if (!this.client.connected) {
+        console.warn('[WebSocket] Cannot initialize presence tracking - client not connected.');
+        return;
     }
 
-    if (this.presenceListSubscription){
-      this.presenceListSubscription.unsubscribe();
-    }
+    console.log('[WebSocket] Initializing presence subscriptions...');
+    if (this.presenceSubscription) this.presenceSubscription.unsubscribe();
+    if (this.presenceListSubscription) this.presenceListSubscription.unsubscribe();
 
-    // 1. Subscribe to the general presence update topic (/topic/presence)
-    console.log('[WebSocket] Subscribing to general presence topic...');
+    // 1. Subscribe to SINGLE presence updates
     this.presenceSubscription = this.client.subscribe(
-      '/topic/presence',
-      (message: IMessage) => {
-        try {
-          const update: PresenceEvent = JSON.parse(message.body);
-          console.log('[WebSocket] Received presence update:', update);
-          if (update && typeof update === 'object' && update.username) {
-            const currentUsers = this.presenceSubject.value;
-            const index = currentUsers.findIndex(u => u.username === update.username);
-            if (index > -1) {
-              // Update existing user status
-              currentUsers[index] = { ...currentUsers[index], online: update.online };
-            } else {
-              // Add new user only if they are online (handle connect events)
-              if (update.online) {
-                 currentUsers.push(update);
-              }
-            }
-            // Filter out users marked as offline (handle disconnect events)
-            const filteredUsers = currentUsers.filter(u => u.online);
-            this.presenceSubject.next([...filteredUsers]);
-          } else {
-             console.warn('[WebSocket] Received invalid presence update format:', message.body);
-          }
-        } catch (e) {
-          console.error('[WebSocket] Failed to parse presence message:', message.body, e);
-        }
-      },
-      { id: 'presence-sub', ...this.getAuthHeaders() }
+        '/topic/presence',
+        (message: IMessage) => this.processPresenceUpdate(message),
+        { id: 'topic-presence-sub', ...this.getAuthHeaders() }
     );
 
-    // 2. Subscribe to the user-specific queue for the initial list
-    console.log('[WebSocket] Subscribing to user-specific presence list queue...');
-    this.client.subscribe(
-      '/topic/presence.list',
-      (message: IMessage) => {
-      console.log('[WebSocket] Received message on /topic/presence.list:', message.body);
+    // 2. Subscribe to the FULL LIST broadcast topic
+    this.presenceListSubscription = this.client.subscribe(
+        '/topic/presence.list',
+        (message: IMessage) => this.processPresenceList(message),
+        { id: 'topic-presence-list-sub', ...this.getAuthHeaders() }
+    );
+
+    // 3. Request the initial list AFTER subscriptions are set up
+    timer(500).pipe(takeUntil(this.destroy$)).subscribe(() => {
+        this.requestInitialPresenceList();
+    });
+  }
+
+  private processPresenceUpdate(message: IMessage): void {
+      try {
+        const update: PresenceEvent = JSON.parse(message.body);
+        console.log('[WebSocket] Received presence update on /topic/presence:', update);
+        if (update && typeof update === 'object' && update.username) {
+          const currentUsers = [...this.presenceSubject.value];
+          const index = currentUsers.findIndex(u => u.username === update.username);
+
+          if (update.online) {
+            if (index > -1) currentUsers[index] = update;
+            else currentUsers.push(update);
+            this.presenceSubject.next(currentUsers);
+          } else {
+            if (index > -1) {
+              const nextUsers = currentUsers.filter(u => u.username !== update.username);
+              this.presenceSubject.next(nextUsers);
+            }
+          }
+        } else { console.warn('[WebSocket] Invalid presence update format'); }
+      } catch (e) { console.error('[WebSocket] Failed to parse presence update:', e); }
+  }
+
+  private processPresenceList(message: IMessage): void {
       try {
         const fullList: PresenceEvent[] = JSON.parse(message.body);
-        console.log('[WebSocket] Parsed presence list from topic:', fullList);
+        console.log('[WebSocket] Received presence list on /topic/presence.list:', fullList);
         if (Array.isArray(fullList)) {
            const onlineUsers = fullList.filter(u => u.online);
-           console.log('[WebSocket] Emitting full presence list from topic:', onlineUsers);
-           this.presenceSubject.next([...onlineUsers]); // Update subject with the full list
-        } else {
-            console.warn('[WebSocket] Received invalid presence list format on topic:', message.body);
-        }
-      } catch (e) {
-        console.error('[WebSocket] Failed to parse presence list from topic:', message.body, e);
-      }
-    },
-    { id: 'topic-presence-list-sub', ...this.getAuthHeaders() }
-  );
-    // 3. After subscribing, REQUEST the initial list
-    this.requestInitialPresenceList();
+           console.log('[WebSocket] Emitting full online presence list:', onlineUsers);
+           this.presenceSubject.next([...onlineUsers]);
+        } else { console.warn('[WebSocket] Invalid presence list format'); }
+      } catch (e) { console.error('[WebSocket] Failed to parse presence list:', e); }
   }
 
   private requestInitialPresenceList(): void {
@@ -222,28 +232,38 @@ export class WebsocketService implements OnDestroy {
           return;
       }
       console.log('[WebSocket] Sending request for initial presence list to /app/presence.requestList');
-      this.client.publish({
-          destination: '/app/presence.requestList',
-          body: '',
-          headers: this.getAuthHeaders()
-      });
+      try {
+        this.client.publish({
+            destination: '/app/presence.requestList',
+            body: '',
+            headers: this.getAuthHeaders()
+        });
+      } catch (e) {
+          console.error('[WebSocket] Error publishing presence list request:', e);
+      }
   }
 
+
+  // --- Room Handling ---
+
   public joinRoom(roomId: string): void {
-     if (!this.client.connected) {
-        if (this.client.active) {
-            console.warn(`[WebSocket] Client activating, setting target room to ${roomId}. Will join upon connect.`);
-            this.currentRoom = roomId;
-        } else {
-            console.warn('[WebSocket] Cannot join room - Client inactive. Try activating first.');
-        }
+    if (!roomId) {
+      console.error('[WebSocket] Cannot join room: Invalid roomId provided.');
       return;
     }
 
-    console.log(`[WebSocket] Joining room: ${roomId}`);
-    this.leaveCurrentRoom();
-    this.currentRoom = roomId;
+    if (!this.client?.connected) {
+      console.warn(`[WebSocket] Client not connected. Setting target room to ${roomId}. Will join upon connect.`);
+      this.currentRoomSubject.next(roomId);
+       if (!this.client || !this.client.active) {
+           this.activateConnection();
+       }
+      return;
+    }
 
+    console.log(`[WebSocket] Attempting to join room: ${roomId}`);
+    this.leaveCurrentRoom();
+    this.currentRoomSubject.next(roomId);
     this.subscribeToRoomTopics(roomId);
   }
 
@@ -254,173 +274,175 @@ export class WebsocketService implements OnDestroy {
      }
      console.log(`[WebSocket] Subscribing to topics for room: ${roomId}`);
 
-     if(this.roomSubscription) this.roomSubscription.unsubscribe();
-     if(this.typingSubscription) this.typingSubscription.unsubscribe();
+     // Ensure old subs are cleared
+     if(this.roomMessageSubscription) this.roomMessageSubscription.unsubscribe();
+     if(this.roomTypingSubscription) this.roomTypingSubscription.unsubscribe();
 
-     this.roomSubscription = this.client.subscribe(
-       `/topic/chat/${roomId}`,
-        (message: IMessage) => {
-          try {
-              const chatMessage: ChatMessage = JSON.parse(message.body);
-              this.messagesSubject.next(chatMessage);
-          } catch (e) {
-               console.error('[WebSocket] Failed to parse chat message:', message.body, e);
-          }
-        },
-      { id: `room-${roomId}-msg-sub`, ...this.getAuthHeaders() }
+     // Subscribe to new chat messages
+     const messageDestination = `/topic/chat/${roomId}`;
+     this.roomMessageSubscription = this.client.subscribe(
+       messageDestination,
+       (message: IMessage) => {
+         try {
+             const chatMessage: ChatMessage = JSON.parse(message.body);
+             this.messagesSubject.next(chatMessage);
+         } catch (e) { console.error('[WebSocket] Failed to parse chat message:', e); }
+       },
+       { id: `room-${roomId}-msg-sub`, ...this.getAuthHeaders() }
      );
+     console.log(`[WebSocket] Subscribed to ${messageDestination}`);
 
-     this.typingSubscription = this.client.subscribe(
-       `/topic/typing/${roomId}`,
+     // Subscribe to typing events
+     const typingDestination = `/topic/typing/${roomId}`;
+     this.roomTypingSubscription = this.client.subscribe(
+       typingDestination,
        (message: IMessage) => {
           try {
              const typingEvent: TypingEvent = JSON.parse(message.body);
-             this.typingSubject.next(typingEvent);
-          } catch (e) {
-               console.error('[WebSocket] Failed to parse typing message:', message.body, e);
-          }
+             const currentUser = this.authService.currentUserValue;
+             if (typingEvent.username !== currentUser?.username) {
+                this.typingSubject.next(typingEvent);
+             }
+          } catch (e) { console.error('[WebSocket] Failed to parse typing message:', e); }
        },
-       { id: `typing-${roomId}-sub`, ...this.getAuthHeaders() }
+       { id: `room-${roomId}-typing-sub`, ...this.getAuthHeaders() }
      );
+     console.log(`[WebSocket] Subscribed to ${typingDestination}`);
   }
 
-  private leaveCurrentRoom(): void {
-    if (this.roomSubscription) {
-      console.log(`[WebSocket] Unsubscribing from room messages: ${this.currentRoom}`);
-      this.roomSubscription.unsubscribe();
-      this.roomSubscription = undefined;
+  public leaveCurrentRoom(): void {
+    const roomToLeave = this.currentRoomSubject.value;
+      if (roomToLeave) {
+      console.log(`[WebSocket] Leaving room: ${roomToLeave}`);
+      if (this.roomMessageSubscription) {
+          try { this.roomMessageSubscription.unsubscribe(); } catch(e){}
+          this.roomMessageSubscription = undefined;
+      }
+      if (this.roomTypingSubscription) {
+          try { this.roomTypingSubscription.unsubscribe(); } catch(e){}
+          this.roomTypingSubscription = undefined;
+      }
+      this.typingSubject.next(null);
+      this.currentRoomSubject.next(null);
     }
-    if (this.typingSubscription) {
-      console.log(`[WebSocket] Unsubscribing from room typing: ${this.currentRoom}`);
-      this.typingSubscription.unsubscribe();
-      this.typingSubscription = undefined;
-    }
-     this.typingSubject.next(null);
   }
 
-  public getPresenceUpdates(): Observable<PresenceEvent[]> {
-    return this.presenceSubject.asObservable();
-  }
+  // --- Sending Actions ---
 
-  public getTypingUpdates(): Observable<TypingEvent | null> {
-    return this.typingSubject.asObservable();
-  }
+  public async sendMessage(message: Omit<ChatMessage, 'sender' | 'timestamp' | 'id' | 'roomId'>): Promise<void> {
+      const currentRoomId = this.currentRoomSubject.value;
+      if (!currentRoomId) {
+          console.error('Cannot send message - not currently in a room.');
+          throw new Error('Not in a room');
+      }
+      const currentUser = this.authService.currentUserValue;
+       if (!currentUser?.username) {
+          console.error('Cannot send message - no authenticated user.');
+          throw new Error('Not authenticated');
+      }
 
-  public async sendMessage(message: Omit<ChatMessage, 'sender' | 'timestamp' | 'id'>): Promise<void> {
-     try {
+      try {
         await this.waitForConnection();
-    } catch (error) {
-        console.error('Cannot send message - connection failed or timed out.', error);
-        return;
-    }
+      } catch (error) {
+          console.error('Cannot send message - connection failed or timed out.', error);
+          throw error;
+      }
 
-    const currentUser = this.authService.currentUserValue;
-    if (!currentUser?.username) {
-      console.error('Cannot send message - no authenticated user with username');
-      return;
-    }
-     if (!this.currentRoom) {
-        console.error('Cannot send message - not joined to a room.');
-        return;
-    }
+      const completeMessage: ChatMessage = {
+          ...message,
+          roomId: currentRoomId,
+          sender: currentUser.username,
+          timestamp: new Date().toISOString()
+      };
 
-    const completeMessage: ChatMessage = {
-      ...message,
-      roomId: this.currentRoom,
-      sender: currentUser.username,
-      timestamp: new Date().toISOString()
-    };
-
-    this.client.publish({
-      destination: '/app/chat.sendMessage',
-      body: JSON.stringify(completeMessage),
-      headers: this.getAuthHeaders()
-    });
+      console.log('[WebSocket] Publishing message:', completeMessage);
+      this.client.publish({
+          destination: '/app/chat.sendMessage',
+          body: JSON.stringify(completeMessage),
+          headers: this.getAuthHeaders()
+      });
   }
 
   public async sendTyping(isTyping: boolean): Promise<void> {
-    if (!this.currentRoom) {
-        return;
-    }
-    const currentUser = this.authService.currentUserValue;
-    if (!currentUser?.username) {
-        return;
-    }
+      const currentRoomId = this.currentRoomSubject.value;
+      if (!currentRoomId) return;
 
-     try {
-        await this.waitForConnection();
-    } catch (error) {
-        console.error('Cannot send typing status - connection failed or timed out.', error);
-        return;
-    }
+      const currentUser = this.authService.currentUserValue;
+      if (!currentUser?.username) return;
 
-    this.client.publish({
-      destination: '/app/chat.typing',
-      body: JSON.stringify({
-        roomId: this.currentRoom,
-        username: currentUser.username,
-        typing: isTyping
-      }),
-      headers: this.getAuthHeaders()
-    });
+       try {
+          await this.waitForConnection(1000);
+      } catch (error) {
+          return;
+      }
+
+      this.client.publish({
+          destination: '/app/chat.typing',
+          body: JSON.stringify({
+              roomId: currentRoomId,
+              username: currentUser.username,
+              typing: isTyping
+          }),
+          headers: this.getAuthHeaders()
+      });
   }
 
-  private waitForConnection(timeoutMs = 10000): Promise<void> {
-    if (this.client.connected) {
+
+  // --- Helper Methods ---
+
+  private waitForConnection(timeoutMs = 5000): Promise<boolean | void> {
+    if (this.client?.connected) {
       return Promise.resolve();
     }
-
-    console.log('[WebSocket] Waiting for connection...');
     const timeoutPromise = new Promise<void>((_, reject) =>
         setTimeout(() => reject(new Error(`Connection timeout after ${timeoutMs}ms`)), timeoutMs)
     );
-
     const connectionPromise = firstValueFrom(
-        this.isConnected$.pipe(
-            filter(isConnected => isConnected),
-            first()
-        )
-    ).then(() => {
-         console.log('[WebSocket] Connection ready.');
-    });
+        this.isConnected$.pipe(filter(isConnected => isConnected), first())
+    );
 
     return Promise.race([connectionPromise, timeoutPromise]).catch(error => {
-        console.error('[WebSocket] Failed waiting for connection:', error);
-        throw error;
+          console.error('[WebSocket] Failed waiting for connection:', error);
+          throw error;
     });
   }
 
+   private getAuthHeaders(): StompHeaders {
+    const token = this.authService.getToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  // --- Cleanup ---
 
   private clearSubscriptions(): void {
-    console.log('[WebSocket] Clearing local STOMP subscriptions...');
+    console.log('[WebSocket] Clearing ALL local STOMP subscriptions...');
     this.leaveCurrentRoom();
 
-    if (this.presenceSubscription) {
-      try { this.presenceSubscription.unsubscribe(); } catch(e) { /* ignore */ }
-      this.presenceSubscription = undefined;
-    }
-     if (this.presenceListSubscription) { // Unsubscribe from the list topic
-      try { this.presenceListSubscription.unsubscribe(); } catch(e) { /* ignore */ }
-      this.presenceListSubscription = undefined;
-    }
+    if (this.presenceSubscription) { try { this.presenceSubscription.unsubscribe(); } catch(e) {} this.presenceSubscription = undefined; }
+    if (this.presenceListSubscription) { try { this.presenceListSubscription.unsubscribe(); } catch(e) {} this.presenceListSubscription = undefined; }
 
     this.presenceSubject.next([]);
-    this.typingSubject.next(null);;
+    this.typingSubject.next(null);
+    this.currentRoomSubject.next(null);
   }
 
   public disconnect(): void {
     console.log('[WebSocket] Disconnect called, cleaning up...');
+    this.connectionRetryTimer?.unsubscribe();
     this.clearSubscriptions();
     if (this.client?.deactivate) {
       try {
-        this.client.deactivate();
-        console.log('[WebSocket] Client deactivated.');
+        this.client.deactivate().then(() => {
+             console.log('[WebSocket] Client deactivated.');
+             this.connectionState$.next(false);
+        });
       } catch (error) {
         console.error('[WebSocket] Error during client deactivation:', error);
+         this.connectionState$.next(false);
       }
+    } else {
+        this.connectionState$.next(false);
     }
-    this.connectionState$.next(false);
-    this.currentRoom = null;
   }
 
   ngOnDestroy(): void {
