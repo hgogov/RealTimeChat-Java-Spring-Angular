@@ -4,12 +4,14 @@ import com.chatapp.backend.model.ChatRoom;
 import com.chatapp.backend.model.User;
 import com.chatapp.backend.model.dto.ChatRoomDto;
 import com.chatapp.backend.model.dto.CreateChatRoomRequest;
-import com.chatapp.backend.repository.ChatRoomRepository;
 import com.chatapp.backend.repository.UserRepository;
+import com.chatapp.backend.service.ChatRoomService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -25,11 +27,13 @@ import java.util.stream.Collectors;
 @Tag(name = "Chat Rooms", description = "Manage Chat Rooms")
 public class ChatRoomController {
 
-    private final ChatRoomRepository chatRoomRepository;
+    private static final Logger log = LoggerFactory.getLogger(ChatRoomController.class);
+
+    private final ChatRoomService chatRoomService;
     private final UserRepository userRepository;
 
-    public ChatRoomController(ChatRoomRepository chatRoomRepository, UserRepository userRepository) {
-        this.chatRoomRepository = chatRoomRepository;
+    public ChatRoomController(ChatRoomService chatRoomService, UserRepository userRepository) {
+        this.chatRoomService = chatRoomService;
         this.userRepository = userRepository;
     }
 
@@ -40,7 +44,10 @@ public class ChatRoomController {
         }
         String username = authentication.getName();
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Authenticated user not found in database"));
+                .orElseThrow(() -> {
+                    log.error("Authenticated user '{}' not found in database!", username);
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "Authenticated user not found in database");
+                });
     }
 
     @PostMapping
@@ -49,26 +56,18 @@ public class ChatRoomController {
     @ApiResponse(responseCode = "400", description = "Invalid request data or room name already exists")
     @ApiResponse(responseCode = "401", description = "User not authenticated")
     public ResponseEntity<ChatRoomDto> createChatRoom(@Valid @RequestBody CreateChatRoomRequest request) {
+        log.info("Received request to create room: {}", request.getName());
         User currentUser = getCurrentUser();
-
-        // Check if room name already exists
-        if (chatRoomRepository.findByName(request.getName()).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Room name '" + request.getName() + "' already exists.");
+        try {
+            ChatRoom savedRoom = chatRoomService.createRoom(request.getName().trim(), currentUser);
+            return new ResponseEntity<>(mapToDto(savedRoom), HttpStatus.CREATED);
+        } catch (ResponseStatusException e) {
+            log.warn("Failed to create room '{}': {}", request.getName(), e.getReason());
+            return ResponseEntity.status(e.getStatusCode()).body(null);
+        } catch (Exception e) {
+            log.error("Unexpected error creating room '{}'", request.getName(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
-
-        ChatRoom newRoom = ChatRoom.builder()
-                .name(request.getName())
-                .createdBy(currentUser)
-                .build();
-
-        // Add the creator as the first member
-        newRoom.getMembers().add(currentUser);
-        currentUser.getChatRooms().add(newRoom);
-
-        ChatRoom savedRoom = chatRoomRepository.save(newRoom);
-        userRepository.save(currentUser);
-
-        return new ResponseEntity<>(mapToDto(savedRoom), HttpStatus.CREATED);
     }
 
     @GetMapping
@@ -76,15 +75,18 @@ public class ChatRoomController {
     @ApiResponse(responseCode = "200", description = "List of chat rooms")
     @ApiResponse(responseCode = "401", description = "User not authenticated")
     public ResponseEntity<List<ChatRoomDto>> getUserChatRooms() {
+        log.info("Received request to get user rooms");
         User currentUser = getCurrentUser();
-
-        List<ChatRoom> rooms = chatRoomRepository.findChatRoomsByUserId(currentUser.getId());
-
-        List<ChatRoomDto> roomDtos = rooms.stream()
-                .map(this::mapToDto)
-                .collect(Collectors.toList());
-
-        return ResponseEntity.ok(roomDtos);
+        try {
+            List<ChatRoom> rooms = chatRoomService.findRoomsForUser(currentUser);
+            List<ChatRoomDto> roomDtos = rooms.stream()
+                    .map(this::mapToDto)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(roomDtos);
+        } catch (Exception e) {
+            log.error("Unexpected error fetching rooms for user '{}'", currentUser.getUsername(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(List.of());
+        }
     }
 
     private ChatRoomDto mapToDto(ChatRoom room) {
@@ -96,5 +98,5 @@ public class ChatRoomController {
                 .build();
     }
 
-    // TODO: Add endpoints for joining existing rooms, leaving rooms, getting room details by ID etc.
+    // TODO: Add endpoints for joining/leaving rooms, calling corresponding service methods
 }

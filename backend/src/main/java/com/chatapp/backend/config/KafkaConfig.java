@@ -16,22 +16,30 @@ import org.springframework.util.backoff.FixedBackOff;
 public class KafkaConfig {
 
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, ChatMessage> kafkaListenerContainerFactory(ConsumerFactory<String, ChatMessage> consumerFactory, KafkaTemplate<String, ChatMessage> kafkaTemplate) {
+    public ConcurrentKafkaListenerContainerFactory<String, ChatMessage> kafkaListenerContainerFactory(
+            ConsumerFactory<String, ChatMessage> consumerFactory,
+            KafkaTemplate<String, Object> dlqKafkaTemplate) {
+
         ConcurrentKafkaListenerContainerFactory<String, ChatMessage> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
-        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE); // Manual acknowledgment
-        factory.setCommonErrorHandler(defaultErrorHandler(kafkaTemplate));
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        factory.setCommonErrorHandler(defaultErrorHandler(dlqKafkaTemplate));
         return factory;
     }
 
     @Bean
-    public DefaultErrorHandler defaultErrorHandler(KafkaTemplate<String, ChatMessage> kafkaTemplate) {
+    public DefaultErrorHandler defaultErrorHandler(KafkaTemplate<String, Object> dlqKafkaTemplate) {
         // Retry 3 times with a 1-second delay between attempts
         FixedBackOff backOff = new FixedBackOff(1000L, 3L);
-        // Configure DLQ publishing to "chat-messages-dlt"
-        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate, (record, exception) -> new TopicPartition("chat-messages-dlt", record.partition()));
+
+        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(dlqKafkaTemplate,
+                (record, exception) -> {
+                    return new TopicPartition("chat-messages-dlt", -1); // -1 for default partitioner
+                });
+
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(recoverer, backOff);
-        errorHandler.addNotRetryableExceptions(IllegalArgumentException.class); // Example of a non-retryable exception
+        errorHandler.addNotRetryableExceptions(IllegalArgumentException.class);
         return errorHandler;
     }
+
 }
