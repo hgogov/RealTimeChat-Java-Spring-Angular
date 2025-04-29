@@ -4,7 +4,7 @@ import com.chatapp.backend.model.ChatRoom;
 import com.chatapp.backend.model.User;
 import com.chatapp.backend.repository.ChatRoomRepository;
 import com.chatapp.backend.repository.UserRepository;
-import org.slf4j.Logger; // Use SLF4J for logging
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -67,11 +67,12 @@ public class ChatRoomService {
 
     @Transactional(readOnly = true)
     public List<ChatRoom> findRoomsForUser(User user) {
-        log.debug("Fetching rooms for user '{}' (ID: {})", user.getUsername(), user.getId());
         if (user == null || user.getId() == null) {
             log.warn("Cannot fetch rooms for null user or user without ID.");
             return List.of();
         }
+        log.debug("Fetching rooms for user '{}' (ID: {})", user.getUsername(), user.getId());
+
         List<ChatRoom> rooms = chatRoomRepository.findChatRoomsByUserId(user.getId());
         log.debug("Found {} rooms for user '{}'", rooms.size(), user.getUsername());
         return rooms;
