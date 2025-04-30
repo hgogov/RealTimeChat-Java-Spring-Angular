@@ -28,8 +28,8 @@ dependencies {
 	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
 	implementation 'io.jsonwebtoken:jjwt-impl:0.11.5'
 	implementation 'io.jsonwebtoken:jjwt-jackson:0.11.5'
-	implementation 'com.fasterxml.jackson.core:jackson-databind' // For JSON parsing
-	implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310' // For Java 8 date/time
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+	implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 	implementation 'org.springframework.session:spring-session-data-redis'
 	implementation 'org.webjars:sockjs-client:1.5.1'
@@ -41,7 +41,9 @@ dependencies {
 	testImplementation 'org.springframework.kafka:spring-kafka-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testImplementation 'com.h2database:h2'
-	testImplementation 'org.springframework.kafka:spring-kafka-test'
+	testImplementation 'org.awaitility:awaitility'
+	testImplementation 'org.springframework.boot:spring-boot-starter-validation'
+
 	testImplementation 'org.apache.kafka:kafka-clients'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	compileOnly 'org.projectlombok:lombok'
