@@ -40,7 +40,6 @@ public class TestControllerConfiguration {
     @Primary
     public AuthenticationManager mockAuthenticationManager() {
         System.out.println("--- Providing Mock AuthenticationManager via TestConfig ---");
-        // Be careful mocking AuthenticationManager if complex behavior is needed
         return Mockito.mock(AuthenticationManager.class);
     }
 
