@@ -7,6 +7,7 @@ import com.chatapp.backend.model.dto.CreateChatRoomRequest;
 import com.chatapp.backend.repository.UserRepository;
 import com.chatapp.backend.service.ChatRoomService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -98,5 +99,47 @@ public class ChatRoomController {
                 .build();
     }
 
-    // TODO: Add endpoints for joining/leaving rooms, calling corresponding service methods
+    @PostMapping("/{roomId}/join")
+    @Operation(summary = "Join an existing chat room")
+    @ApiResponse(responseCode = "200", description = "Successfully joined room")
+    @ApiResponse(responseCode = "400", description = "User already in room")
+    @ApiResponse(responseCode = "401", description = "User not authenticated")
+    @ApiResponse(responseCode = "404", description = "Room or User not found")
+    public ResponseEntity<Void> joinChatRoom(
+            @Parameter(description = "ID of the room to join") @PathVariable Long roomId) {
+        User currentUser = getCurrentUser();
+        log.info("Received request for user '{}' to join room ID: {}", currentUser.getUsername(), roomId);
+        try {
+            chatRoomService.joinRoom(roomId, currentUser);
+            return ResponseEntity.ok().build();
+        } catch (ResponseStatusException e) {
+            log.warn("Failed to join room {}: Status={}, Reason={}", roomId, e.getStatusCode(), e.getReason());
+            return ResponseEntity.status(e.getStatusCode()).build();
+        } catch (Exception e) {
+            log.error("Unexpected error joining room {} for user '{}'", roomId, currentUser.getUsername(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @DeleteMapping("/{roomId}/leave")
+    @Operation(summary = "Leave a chat room")
+    @ApiResponse(responseCode = "200", description = "Successfully left room")
+    @ApiResponse(responseCode = "400", description = "User not in room")
+    @ApiResponse(responseCode = "401", description = "User not authenticated")
+    @ApiResponse(responseCode = "404", description = "Room or User not found")
+    public ResponseEntity<Void> leaveChatRoom(
+            @Parameter(description = "ID of the room to leave") @PathVariable Long roomId) {
+        User currentUser = getCurrentUser();
+        log.info("Received request for user '{}' to leave room ID: {}", currentUser.getUsername(), roomId);
+        try {
+            chatRoomService.leaveRoom(roomId, currentUser);
+            return ResponseEntity.ok().build();
+        } catch (ResponseStatusException e) {
+            log.warn("Failed to leave room {}: Status={}, Reason={}", roomId, e.getStatusCode(), e.getReason());
+            return ResponseEntity.status(e.getStatusCode()).build();
+        } catch (Exception e) {
+            log.error("Unexpected error leaving room {} for user '{}'", roomId, currentUser.getUsername(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 }
