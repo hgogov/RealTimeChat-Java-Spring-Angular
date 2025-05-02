@@ -7,12 +7,14 @@ import com.chatapp.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 
@@ -36,6 +38,7 @@ class ChatRoomServiceTest {
     private ChatRoomService chatRoomService;
 
     private User testUser;
+    private User anotherUser;
     private ChatRoom testRoom;
 
     @BeforeEach
@@ -43,13 +46,22 @@ class ChatRoomServiceTest {
         testUser = new User();
         testUser.setId(1L);
         testUser.setUsername("testuser");
+        testUser.setChatRooms(new HashSet<>());
+
+        anotherUser = new User();
+        anotherUser.setId(2L);
+        anotherUser.setUsername("anotheruser");
+        anotherUser.setChatRooms(new HashSet<>());
+
 
         testRoom = ChatRoom.builder()
                 .id(10L)
                 .name("Test Room")
                 .createdBy(testUser)
+                .members(new HashSet<>())
                 .build();
         testRoom.getMembers().add(testUser);
+        testUser.getChatRooms().add(testRoom);
     }
 
     @Test
@@ -150,5 +162,146 @@ class ChatRoomServiceTest {
         verify(chatRoomRepository, never()).findChatRoomsByUserId(anyLong());
     }
 
-    // TODO: Add tests for addUserToRoom, removeUserFromRoom later
+    // Tests for joinRoom
+    @Test
+    void joinRoom_whenRoomAndUserExistAndNotMember_shouldAddUserToRoom() {
+        Long roomId = testRoom.getId();
+
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+        when(userRepository.findById(anotherUser.getId())).thenReturn(Optional.of(anotherUser));
+
+        assertThat(testRoom.getMembers()).doesNotContain(anotherUser);
+
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        chatRoomService.joinRoom(roomId, anotherUser);
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        User savedUser = userCaptor.getValue();
+        assertThat(savedUser.getChatRooms()).contains(testRoom);
+
+        verify(chatRoomRepository).findById(roomId);
+        verify(userRepository).findById(anotherUser.getId());
+    }
+
+    @Test
+    void joinRoom_whenRoomNotFound_shouldThrowNotFoundException() {
+        Long nonExistentRoomId = 99L;
+        when(chatRoomRepository.findById(nonExistentRoomId)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            chatRoomService.joinRoom(nonExistentRoomId, testUser);
+        });
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("Room not found"));
+        verify(userRepository, never()).findById(anyLong());
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void joinRoom_whenUserNotFound_shouldThrowInternalServerError() {
+        Long roomId = testRoom.getId();
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+        when(userRepository.findById(testUser.getId())).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            chatRoomService.joinRoom(roomId, testUser);
+        });
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("User record not found"));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+
+    @Test
+    void joinRoom_whenUserAlreadyMember_shouldThrowBadRequestException() {
+        Long roomId = testRoom.getId();
+
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+        when(userRepository.findById(testUser.getId())).thenReturn(Optional.of(testUser));
+
+        assertTrue(testRoom.getMembers().contains(testUser));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            chatRoomService.joinRoom(roomId, testUser);
+        });
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("already in room"));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+
+    // Tests for leaveRoom
+
+    @Test
+    void leaveRoom_whenRoomAndUserExistAndIsMember_shouldRemoveUserFromRoom() {
+        Long roomId = testRoom.getId();
+
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+        when(userRepository.findById(testUser.getId())).thenReturn(Optional.of(testUser));
+        assertTrue(testRoom.getMembers().contains(testUser));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        chatRoomService.leaveRoom(roomId, testUser);
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        User savedUser = userCaptor.getValue();
+        assertThat(savedUser.getChatRooms()).doesNotContain(testRoom);
+
+        verify(chatRoomRepository).findById(roomId);
+        verify(userRepository).findById(testUser.getId());
+    }
+
+    @Test
+    void leaveRoom_whenRoomNotFound_shouldThrowNotFoundException() {
+        Long nonExistentRoomId = 99L;
+        when(chatRoomRepository.findById(nonExistentRoomId)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            chatRoomService.leaveRoom(nonExistentRoomId, testUser);
+        });
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("Room not found"));
+        verify(userRepository, never()).findById(anyLong());
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void leaveRoom_whenUserNotFound_shouldThrowInternalServerError() {
+        Long roomId = testRoom.getId();
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+        when(userRepository.findById(testUser.getId())).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            chatRoomService.leaveRoom(roomId, testUser);
+        });
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("User record not found"));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+
+    @Test
+    void leaveRoom_whenUserNotMember_shouldThrowBadRequestException() {
+        Long roomId = testRoom.getId();
+
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+        when(userRepository.findById(anotherUser.getId())).thenReturn(Optional.of(anotherUser));
+        assertFalse(testRoom.getMembers().contains(anotherUser));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            chatRoomService.leaveRoom(roomId, anotherUser);
+        });
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("User not in room"));
+        verify(userRepository, never()).save(any(User.class));
+    }
 }
