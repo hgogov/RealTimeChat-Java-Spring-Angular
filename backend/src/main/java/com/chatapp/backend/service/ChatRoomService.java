@@ -126,4 +126,60 @@ public class ChatRoomService {
         chatRoomRepository.save(room);
         log.info("Successfully removed user '{}' from room '{}'", user.getUsername(), room.getName());
     }
+
+    @Transactional
+    public void joinRoom(Long roomId, User user) {
+        log.info("User '{}' attempting to join room ID: {}", user.getUsername(), roomId);
+
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> {
+                    log.warn("Join room failed for user '{}': Room ID {} not found.", user.getUsername(), roomId);
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found");
+                });
+
+        User managedUser = userRepository.findById(user.getId())
+                .orElseThrow(() -> {
+                    log.error("Join room failed: Authenticated user ID {} not found in DB.", user.getId());
+                    return new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "User record not found");
+                });
+
+
+        if (room.getMembers().contains(managedUser)) {
+            log.warn("User '{}' is already a member of room '{}'. No action taken.", managedUser.getUsername(), room.getName());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User already in room '" + room.getName() + "'");
+        }
+
+        managedUser.getChatRooms().add(room);
+        userRepository.save(managedUser);
+
+        log.info("User '{}' successfully joined room '{}' (ID: {})", managedUser.getUsername(), room.getName(), room.getId());
+    }
+
+    @Transactional
+    public void leaveRoom(Long roomId, User user) {
+        log.info("User '{}' attempting to leave room ID: {}", user.getUsername(), roomId);
+
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> {
+                    log.warn("Leave room failed for user '{}': Room ID {} not found.", user.getUsername(), roomId);
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found");
+                });
+
+        User managedUser = userRepository.findById(user.getId())
+                .orElseThrow(() -> {
+                    log.error("Leave room failed: Authenticated user ID {} not found in DB.", user.getId());
+                    return new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "User record not found");
+                });
+
+        if (!room.getMembers().contains(managedUser)) {
+            log.warn("User '{}' is not a member of room '{}'. Cannot leave.", managedUser.getUsername(), room.getName());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User not in room '" + room.getName() + "'");
+        }
+
+        managedUser.getChatRooms().remove(room);
+        userRepository.save(managedUser);
+
+
+        log.info("User '{}' successfully left room '{}' (ID: {})", managedUser.getUsername(), room.getName(), room.getId());
+    }
 }
