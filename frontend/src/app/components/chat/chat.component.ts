@@ -185,18 +185,24 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
           .subscribe({
               next: (rooms) => {
                   console.log('[ChatComponent] Received user rooms:', rooms);
+                  const previouslySelectedRoom = this.currentRoomName;
                   this.availableRooms = rooms.sort((a, b) => a.name.localeCompare(b.name));
 
-                  if (!this.currentRoomName && rooms.length > 0) {
-                      const generalRoom = rooms.find(r => r.name.toLowerCase() === 'general');
-                      const roomToJoin = generalRoom || rooms[0];
-                      timer(100).pipe(takeUntil(this.destroy$)).subscribe(() => {
-                           this.selectRoom(roomToJoin.name);
-                      });
-                  } else if (this.currentRoomName && !rooms.some(r => r.name === this.currentRoomName)) {
-                      this.selectRoom(rooms[0]?.name);
-                  } else if (rooms.length === 0) {
+                  const currentRoomStillExists = previouslySelectedRoom && rooms.some(r => r.name === previouslySelectedRoom);
+
+                  if (currentRoomStillExists) {
+                      console.log(`[ChatComponent] Current room '${previouslySelectedRoom}' still exists.`);
+                  } else if (rooms.length > 0) {
+                      const roomToJoin = rooms.find(r => r.name.toLowerCase() === 'general') || rooms[0];
+                      console.log(`[ChatComponent] Current room '${previouslySelectedRoom}' gone or none selected. Selecting default/first: '${roomToJoin.name}'`);
+                       timer(100).pipe(takeUntil(this.destroy$)).subscribe(() => {
+                          this.selectRoom(roomToJoin.name);
+                       });
+                  } else {
                        console.log('[ChatComponent] User is not in any rooms.');
+                       if (this.currentRoomName) {
+                           this.websocketService.leaveCurrentRoom();
+                       }
                   }
                   this.cdRef.detectChanges();
               },
@@ -239,17 +245,42 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   // --- UI Actions ---
 
+  confirmLeaveRoom(roomId: number, roomName: string): void {
+      this.leaveRoom(roomId, roomName);
+  }
+
+  private leaveRoom(roomId: number, roomName: string): void {
+      console.log(`[ChatComponent] Attempting to leave room ID: ${roomId} (${roomName})`);
+      this.chatRoomService.leaveRoom(roomId)
+          .pipe(takeUntil(this.destroy$))
+          .subscribe({
+              next: () => {
+                  this.snackBar.open(`You have left room "${roomName}"`, 'Close', { duration: 3000 });
+                  if (this.currentRoomName === roomName) {
+                      this.websocketService.leaveCurrentRoom();
+                  }
+                  this.loadUserRooms();
+              },
+              error: (err) => {
+                   console.error(`[ChatComponent] Error leaving room ${roomId}:`, err);
+                   const errorMsg = err?.error?.message || 'Failed to leave room.';
+                   this.snackBar.open(errorMsg, 'Close', { duration: 4000 });
+              }
+          });
+  }
+
   selectRoom(roomName: string | null): void {
-      if (roomName && roomName !== this.currentRoomName) {
-          console.log(`[ChatComponent] Selecting room: ${roomName}`);
-          this.websocketService.joinRoom(roomName);
-      } else if (roomName === null && this.currentRoomName) {
-           console.log('[ChatComponent] Deselecting room.');
-           this.websocketService.leaveCurrentRoom();
-           this.currentRoomName = null;
-           this.messages = [];
-           this.cdRef.detectChanges();
-      }
+    if (roomName && this.availableRooms.some(r => r.name === roomName)) {
+        if (roomName !== this.currentRoomName) {
+           console.log(`[ChatComponent] Selecting room: ${roomName}`);
+           this.websocketService.joinRoom(roomName);
+        }
+    } else if (roomName === null && this.currentRoomName) {
+         console.log('[ChatComponent] Deselecting room (clearing selection).');
+         this.websocketService.leaveCurrentRoom();
+    } else if (roomName) {
+         console.warn(`[ChatComponent] Attempted to select room '${roomName}' which is not in the available list.`);
+    }
   }
 
   sendMessage(): void {
@@ -303,7 +334,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         .pipe(takeUntil(this.destroy$))
         .subscribe(result => {
           console.log('Create Room Dialog closed with result:', result);
-          // Check if the result indicates success and includes the new room
           if (result?.roomCreated && result?.newRoom) {
               this.loadUserRooms();
               timer(200).pipe(takeUntil(this.destroy$)).subscribe(() => {
