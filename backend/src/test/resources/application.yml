@@ -29,7 +29,7 @@ spring:
       properties:
         spring.json.add.type.headers: false
     consumer:
-      group-id: test-chat-backend-group
+      group-id: chat-backend-group
       auto-offset-reset: earliest
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -51,10 +51,10 @@ spring:
       org.hibernate.type.descriptor.sql.BasicBinder: TRACE
       com.chatapp.backend: DEBUG
 
-# --- Kafka Topics (keep consistent with main config) ---
+# --- Kafka Topics ---
 kafka:
   topics:
-    chat-messages: chat-messages-test
+    chat-messages: chat-messages
 
 # --- JWT for Tests ---
 jwt:
