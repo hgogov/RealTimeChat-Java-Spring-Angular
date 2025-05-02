@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,14 +27,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -167,5 +168,150 @@ class ChatRoomControllerTest {
             response.andDo(print());
             throw e;
         }
+    }
+
+    // --- Tests for POST /{roomId}/join ---
+    @Test
+    @WithMockUser(username = "mockUser")
+    void joinChatRoom_whenSuccessful_shouldReturnOk() throws Exception {
+        Long roomIdToJoin = room2.getId();
+
+        doNothing().when(chatRoomService).joinRoom(eq(roomIdToJoin), any(User.class));
+
+        ResultActions response = mockMvc.perform(post("/api/rooms/{roomId}/join", roomIdToJoin));
+
+        try {
+            response.andExpect(status().isOk());
+        } catch (AssertionError e) {
+            response.andDo(print()); throw e;
+        }
+
+        verify(chatRoomService, times(1)).joinRoom(eq(roomIdToJoin), any(User.class));
+        verify(userRepository, times(1)).findByUsername("mockUser"); // Verify getCurrentUser worked
+    }
+
+    @Test
+    @WithMockUser(username = "mockUser")
+    void joinChatRoom_whenRoomNotFound_shouldReturnNotFound() throws Exception {
+        Long nonExistentRoomId = 99L;
+
+        doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"))
+                .when(chatRoomService).joinRoom(eq(nonExistentRoomId), any(User.class));
+
+        ResultActions response = mockMvc.perform(post("/api/rooms/{roomId}/join", nonExistentRoomId));
+
+        try {
+            response.andExpect(status().isNotFound());
+        } catch (AssertionError e) {
+            response.andDo(print()); throw e;
+        }
+
+        verify(chatRoomService, times(1)).joinRoom(eq(nonExistentRoomId), any(User.class));
+    }
+
+    @Test
+    @WithMockUser(username = "mockUser")
+    void joinChatRoom_whenAlreadyMember_shouldReturnBadRequest() throws Exception {
+        Long existingRoomId = room1.getId();
+        doThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "User already in room"))
+                .when(chatRoomService).joinRoom(eq(existingRoomId), any(User.class));
+
+        ResultActions response = mockMvc.perform(post("/api/rooms/{roomId}/join", existingRoomId));
+
+        try {
+            response.andExpect(status().isBadRequest());
+        } catch (AssertionError e) {
+            response.andDo(print()); throw e;
+        }
+
+        verify(chatRoomService, times(1)).joinRoom(eq(existingRoomId), any(User.class));
+    }
+
+
+    @Test
+        // No @WithMockUser
+    void joinChatRoom_whenNotAuthenticated_shouldReturnForbidden() throws Exception { // Changed expectation
+        Long roomId = room1.getId();
+
+        ResultActions response = mockMvc.perform(post("/api/rooms/{roomId}/join", roomId));
+
+        try {
+            response.andExpect(status().isForbidden());
+        } catch (AssertionError e) {
+            response.andDo(print()); throw e;
+        }
+
+        verify(chatRoomService, never()).joinRoom(anyLong(), any(User.class));
+    }
+
+    // --- Tests for DELETE /{roomId}/leave ---
+
+    @Test
+    @WithMockUser(username = "mockUser")
+    void leaveChatRoom_whenSuccessful_shouldReturnOk() throws Exception {
+        Long roomIdToLeave = room1.getId();
+        doNothing().when(chatRoomService).leaveRoom(eq(roomIdToLeave), any(User.class));
+
+        ResultActions response = mockMvc.perform(delete("/api/rooms/{roomId}/leave", roomIdToLeave));
+
+        try {
+            response.andExpect(status().isOk());
+        } catch (AssertionError e) {
+            response.andDo(print()); throw e;
+        }
+
+        verify(chatRoomService, times(1)).leaveRoom(eq(roomIdToLeave), any(User.class));
+        verify(userRepository, times(1)).findByUsername("mockUser");
+    }
+
+    @Test
+    @WithMockUser(username = "mockUser")
+    void leaveChatRoom_whenRoomNotFound_shouldReturnNotFound() throws Exception {
+        Long nonExistentRoomId = 99L;
+        doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"))
+                .when(chatRoomService).leaveRoom(eq(nonExistentRoomId), any(User.class));
+
+        ResultActions response = mockMvc.perform(delete("/api/rooms/{roomId}/leave", nonExistentRoomId));
+
+        try {
+            response.andExpect(status().isNotFound());
+        } catch (AssertionError e) {
+            response.andDo(print()); throw e;
+        }
+
+        verify(chatRoomService, times(1)).leaveRoom(eq(nonExistentRoomId), any(User.class));
+    }
+
+    @Test
+    @WithMockUser(username = "mockUser")
+    void leaveChatRoom_whenNotMember_shouldReturnBadRequest() throws Exception {
+        Long roomNotMemberOfId = room2.getId();
+        doThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "User not in room"))
+                .when(chatRoomService).leaveRoom(eq(roomNotMemberOfId), any(User.class));
+
+        ResultActions response = mockMvc.perform(delete("/api/rooms/{roomId}/leave", roomNotMemberOfId));
+
+        try {
+            response.andExpect(status().isBadRequest());
+        } catch (AssertionError e) {
+            response.andDo(print()); throw e;
+        }
+
+        verify(chatRoomService, times(1)).leaveRoom(eq(roomNotMemberOfId), any(User.class));
+    }
+
+    @Test
+    void leaveChatRoom_whenNotAuthenticated_shouldReturnForbidden() throws Exception {
+        Long roomId = room1.getId();
+
+        ResultActions response = mockMvc.perform(delete("/api/rooms/{roomId}/leave", roomId));
+
+        try {
+            response.andExpect(status().isForbidden());
+        } catch (AssertionError e) {
+            response.andDo(print()); throw e;
+        }
+
+        verify(chatRoomService, never()).leaveRoom(anyLong(), any(User.class));
     }
 }
