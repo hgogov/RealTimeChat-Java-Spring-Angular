@@ -35,24 +35,50 @@
           <!-- Room List -->
           <div class="room-list-section">
             <h3>Your Rooms</h3>
-            <!-- Add Button to create room -->
+
             <button mat-stroked-button color="primary" (click)="openCreateRoomDialog()" class="create-room-button">
               <mat-icon>add</mat-icon> Create Room
             </button>
-            <mat-list dense class="room-list">
-              <mat-list-item *ngIf="availableRooms.length === 0">
-                <span class="no-rooms-message">Create or join a room!</span>
-              </mat-list-item>
-              <!-- Use availableRooms -->
-              <mat-list-item *ngFor="let room of availableRooms"
-                             (click)="selectRoom(room.name)"
-                             [class.active-room]="room.name === currentRoomName"
-                             matTooltip="Switch to {{ room.name }}"> <!-- Add tooltip -->
-                <mat-icon matListItemIcon>forum</mat-icon>
-                <div matListItemTitle>{{ room.name }}</div>
-              </mat-list-item>
-            </mat-list>
-          </div>
+
+            <!-- Custom room list wrapper -->
+            <div class="room-list-wrapper">
+              <!-- Empty state message -->
+              <div *ngIf="availableRooms.length === 0" class="no-rooms-message">
+                Create or join a room!
+              </div>
+
+              <!-- Room items -->
+              <div *ngFor="let room of availableRooms"
+                   class="room-list-item"
+                   [class.active-room]="room.name === currentRoomName">
+
+                <!-- Room selection area -->
+                <div class="room-select-area" (click)="selectRoom(room.name)" matTooltip="Switch to {{ room.name }}">
+                  <mat-icon class="room-icon">forum</mat-icon>
+                  <span class="room-name">{{ room.name }}</span>
+                </div>
+
+                <!-- Options button -->
+                <button mat-icon-button
+                        class="room-options-button"
+                        [matMenuTriggerFor]="roomMenu"
+                        (click)="$event.stopPropagation()">
+                  <mat-icon>more_vert</mat-icon>
+                </button>
+
+                <!-- Room options menu -->
+                <mat-menu #roomMenu="matMenu">
+                  <button mat-menu-item
+                          color="warn"
+                          (click)="confirmLeaveRoom(room.id, room.name)"
+                          *ngIf="availableRooms.length > 1">
+                    <mat-icon color="warn">exit_to_app</mat-icon>
+                    <span>Leave Room</span>
+                  </button>
+                </mat-menu>
+              </div>
+            </div>
+          </div> <!-- End Room List Section -->
 
           <mat-divider style="margin: 16px 0;"></mat-divider> <!-- Separator -->
 
@@ -63,7 +89,7 @@
               <mat-list-item *ngIf="onlineUsers.length === 0">
                 <span class="no-users-message">No other users online.</span>
               </mat-list-item>
-              <!-- Use onlineUsers -->
+              <!-- User list item structure -->
               <mat-list-item *ngFor="let user of onlineUsers">
                 <mat-icon
                   matListItemIcon
@@ -71,10 +97,11 @@
                   [ngClass]="{'dot-online': user.online, 'dot-offline': !user.online}">
                   circle
                 </mat-icon>
-                <div matListItemTitle>{{ user.username }}</div>
+                <span matListItemTitle>{{ user.username }}</span>
               </mat-list-item>
             </mat-list>
-          </div>
+          </div> <!-- End Online User List Section -->
+
         </div> <!-- End Sidebar -->
 
         <!-- ***** Main Chat Area ***** -->
@@ -92,13 +119,12 @@
                 <mat-list-item *ngIf="messages.length === 0" class="empty-chat-message">
                   <span>No messages yet in {{ currentRoomName }}. Start the conversation!</span>
                 </mat-list-item>
-                <!-- Use messages array -->
+                <!-- Message items loop -->
                 <mat-list-item *ngFor="let message of messages; trackBy: trackByMessageId" role="listitem" class="message-item">
-                  <!-- Use ngClass for styling based on sender -->
+                  <!-- Message bubble -->
                   <div class="message" [ngClass]="{'my-message': message.sender === currentUser?.username, 'other-message': message.sender !== currentUser?.username}">
                     <div class="message-header">
                       <span class="sender" *ngIf="message.sender !== currentUser?.username">{{message.sender}}</span>
-                      <!-- Use date pipe for timestamp formatting -->
                       <span class="timestamp">{{message.timestamp | date:'shortTime'}}</span>
                     </div>
                     <div class="message-content">
@@ -111,14 +137,12 @@
 
             <!-- Typing Indicator -->
             <div class="typing-indicator-container">
-              <!-- Use isSomeoneTyping and typingUsername -->
               <div *ngIf="isSomeoneTyping" class="typing-indicator">
                 {{ typingUsername }} is typing...
               </div>
             </div>
 
             <!-- Message Form -->
-            <!-- Disable form if no room selected -->
             <form [formGroup]="messageForm" (ngSubmit)="sendMessage()" class="message-form" [class.disabled-form]="!currentRoomName">
               <mat-form-field appearance="outline" class="message-input" subscriptSizing="dynamic">
                 <mat-label>Type your message</mat-label>

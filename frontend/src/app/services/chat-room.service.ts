@@ -22,15 +22,19 @@ export class ChatRoomService {
 
   constructor(private http: HttpClient) {}
 
-  // Get rooms for the current logged-in user
   getUserRooms(): Observable<ChatRoom[]> {
     return this.http.get<ChatRoom[]>(this.apiUrl);
   }
 
-  // Create a new chat room
   createRoom(payload: CreateRoomPayload): Observable<ChatRoom> {
     return this.http.post<ChatRoom>(this.apiUrl, payload);
   }
 
-  // TODO: Add methods for joining, leaving, getting details by ID etc.
+  joinRoom(roomId: number): Observable<void> {
+    return this.http.post<void>(`${this.apiUrl}/${roomId}/join`, {});
+  }
+
+  leaveRoom(roomId: number): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/${roomId}/leave`);
+  }
 }
