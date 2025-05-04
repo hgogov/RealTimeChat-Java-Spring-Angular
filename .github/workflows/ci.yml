@@ -2,9 +2,9 @@ name: Java & Angular CI
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "develop" ]
+    branches: [ "main" ]
 
 jobs:
   build_and_test:
@@ -21,7 +21,7 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Setup Gradle
+      - name: Setup Gradle Permissions
         uses: gradle/actions/setup-gradle@v3
 
       - name: Build and Test Backend
