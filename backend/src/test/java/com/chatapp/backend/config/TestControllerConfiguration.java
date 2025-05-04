@@ -1,5 +1,6 @@
 package com.chatapp.backend.config;
 
+import com.chatapp.backend.repository.ChatRoomRepository;
 import com.chatapp.backend.repository.MessageRepository;
 import com.chatapp.backend.repository.UserRepository;
 import com.chatapp.backend.service.ChatRoomService;
@@ -56,6 +57,13 @@ public class TestControllerConfiguration {
     public ChatRoomService mockChatRoomService() {
         System.out.println("--- Providing Mock ChatRoomService via TestConfig ---");
         return Mockito.mock(ChatRoomService.class);
+    }
+
+    @Bean
+    @Primary
+    public ChatRoomRepository mockChatRoomRepository() {
+        System.out.println("--- Providing Mock ChatRoomRepository via TestConfig ---");
+        return Mockito.mock(ChatRoomRepository.class);
     }
 
     @Bean
