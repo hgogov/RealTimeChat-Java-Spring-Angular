@@ -1,5 +1,6 @@
 package com.chatapp.backend.service;
 
+import com.chatapp.backend.config.DataInitializer;
 import com.chatapp.backend.model.ChatRoom;
 import com.chatapp.backend.model.User;
 import com.chatapp.backend.repository.ChatRoomRepository;
@@ -80,26 +81,27 @@ public class ChatRoomService {
 
     @Transactional
     public void addUserToRoom(Long roomId, User userToAdd) {
-        log.info("Attempting to add user '{}' to room ID {}", userToAdd.getUsername(), roomId);
+        log.info("Attempting to add user '{}' (ID: {}) to room ID {}", userToAdd.getUsername(), userToAdd.getId(), roomId);
         ChatRoom room = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> {
-                    log.warn("Join room failed: Room ID {} not found.", roomId);
+                    log.warn("Add user failed: Room ID {} not found.", roomId);
                     return new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found");
                 });
-        User user = userRepository.findById(userToAdd.getId())
+        User managedUser = userRepository.findById(userToAdd.getId())
                 .orElseThrow(() -> {
-                    log.warn("Join room failed: User ID {} not found.", userToAdd.getId());
+                    log.warn("Add user failed: User ID {} not found.", userToAdd.getId());
                     return new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
                 });
 
-        if (room.getMembers().contains(user)) {
-            log.warn("User '{}' is already a member of room '{}'.", user.getUsername(), room.getName());
+        if (room.getMembers().contains(managedUser)) {
+            log.warn("User '{}' is already a member of room '{}'. No add action needed.", managedUser.getUsername(), room.getName());
             return;
         }
 
-        room.getMembers().add(user);
-        chatRoomRepository.save(room);
-        log.info("Successfully added user '{}' to room '{}'", user.getUsername(), room.getName());
+        managedUser.getChatRooms().add(room);
+        userRepository.save(managedUser);
+
+        log.info("Successfully added user '{}' to room '{}' (ID: {})", managedUser.getUsername(), room.getName(), room.getId());
     }
 
     @Transactional
@@ -165,6 +167,11 @@ public class ChatRoomService {
                     return new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found");
                 });
 
+        if (DataInitializer.GENERAL_ROOM_NAME.equalsIgnoreCase(room.getName())) {
+            log.warn("User '{}' attempted to leave the default '{}' room. Denied.", user.getUsername(), DataInitializer.GENERAL_ROOM_NAME);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot leave the default 'General' room.");
+        }
+
         User managedUser = userRepository.findById(user.getId())
                 .orElseThrow(() -> {
                     log.error("Leave room failed: Authenticated user ID {} not found in DB.", user.getId());
@@ -178,7 +185,6 @@ public class ChatRoomService {
 
         managedUser.getChatRooms().remove(room);
         userRepository.save(managedUser);
-
 
         log.info("User '{}' successfully left room '{}' (ID: {})", managedUser.getUsername(), room.getName(), room.getId());
     }
