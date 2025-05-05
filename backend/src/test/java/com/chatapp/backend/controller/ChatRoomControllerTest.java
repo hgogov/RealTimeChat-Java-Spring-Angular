@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -74,26 +75,32 @@ class ChatRoomControllerTest {
     @Test
     @WithMockUser(username = "mockUser")
     void createChatRoom_whenValidRequest_shouldReturnCreated() throws Exception {
-        // Arrange
         CreateChatRoomRequest request = new CreateChatRoomRequest();
         request.setName("Room 1");
-        given(chatRoomService.createRoom(eq("Room 1"), any(User.class))).willReturn(room1);
+        request.setPublic(true);
 
-        // Act
+        given(chatRoomService.createRoom(
+                argThat(req -> req.getName().equals("Room 1") && req.isPublic() == true),
+                any(User.class)
+        )).willReturn(room1);
+
         ResultActions response = mockMvc.perform(post("/api/rooms")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)));
 
-        // Assert
         try {
-            response.andExpect(status().isCreated());
+            response.andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.id", is(10)))
+                    .andExpect(jsonPath("$.name", is("Room 1")));
         } catch (AssertionError e) {
-            System.err.println("Failure in: createChatRoom_whenValidRequest");
             response.andDo(print());
             throw e;
         }
 
-        verify(chatRoomService, times(1)).createRoom(eq("Room 1"), any(User.class));
+        verify(chatRoomService, times(1)).createRoom(
+                argThat(req -> req.getName().equals("Room 1") && req.isPublic() == true),
+                any(User.class)
+        );
         verify(userRepository, times(1)).findByUsername("mockUser");
     }
 
@@ -114,7 +121,7 @@ class ChatRoomControllerTest {
             throw e;
         }
 
-        verify(chatRoomService, never()).createRoom(anyString(), any(User.class));
+        verify(chatRoomService, never()).createRoom(any(), any(User.class));
     }
 
     @Test
@@ -170,7 +177,7 @@ class ChatRoomControllerTest {
         }
     }
 
-    // --- Tests for POST /{roomId}/join ---
+    // Tests for POST /{roomId}/join
     @Test
     @WithMockUser(username = "mockUser")
     void joinChatRoom_whenSuccessful_shouldReturnOk() throws Exception {
@@ -183,7 +190,8 @@ class ChatRoomControllerTest {
         try {
             response.andExpect(status().isOk());
         } catch (AssertionError e) {
-            response.andDo(print()); throw e;
+            response.andDo(print());
+            throw e;
         }
 
         verify(chatRoomService, times(1)).joinRoom(eq(roomIdToJoin), any(User.class));
@@ -203,7 +211,8 @@ class ChatRoomControllerTest {
         try {
             response.andExpect(status().isNotFound());
         } catch (AssertionError e) {
-            response.andDo(print()); throw e;
+            response.andDo(print());
+            throw e;
         }
 
         verify(chatRoomService, times(1)).joinRoom(eq(nonExistentRoomId), any(User.class));
@@ -221,7 +230,8 @@ class ChatRoomControllerTest {
         try {
             response.andExpect(status().isBadRequest());
         } catch (AssertionError e) {
-            response.andDo(print()); throw e;
+            response.andDo(print());
+            throw e;
         }
 
         verify(chatRoomService, times(1)).joinRoom(eq(existingRoomId), any(User.class));
@@ -229,7 +239,6 @@ class ChatRoomControllerTest {
 
 
     @Test
-        // No @WithMockUser
     void joinChatRoom_whenNotAuthenticated_shouldReturnForbidden() throws Exception { // Changed expectation
         Long roomId = room1.getId();
 
@@ -238,13 +247,14 @@ class ChatRoomControllerTest {
         try {
             response.andExpect(status().isForbidden());
         } catch (AssertionError e) {
-            response.andDo(print()); throw e;
+            response.andDo(print());
+            throw e;
         }
 
         verify(chatRoomService, never()).joinRoom(anyLong(), any(User.class));
     }
 
-    // --- Tests for DELETE /{roomId}/leave ---
+    // Tests for DELETE /{roomId}/leave
 
     @Test
     @WithMockUser(username = "mockUser")
@@ -257,7 +267,8 @@ class ChatRoomControllerTest {
         try {
             response.andExpect(status().isOk());
         } catch (AssertionError e) {
-            response.andDo(print()); throw e;
+            response.andDo(print());
+            throw e;
         }
 
         verify(chatRoomService, times(1)).leaveRoom(eq(roomIdToLeave), any(User.class));
@@ -276,7 +287,8 @@ class ChatRoomControllerTest {
         try {
             response.andExpect(status().isNotFound());
         } catch (AssertionError e) {
-            response.andDo(print()); throw e;
+            response.andDo(print());
+            throw e;
         }
 
         verify(chatRoomService, times(1)).leaveRoom(eq(nonExistentRoomId), any(User.class));
@@ -294,7 +306,8 @@ class ChatRoomControllerTest {
         try {
             response.andExpect(status().isBadRequest());
         } catch (AssertionError e) {
-            response.andDo(print()); throw e;
+            response.andDo(print());
+            throw e;
         }
 
         verify(chatRoomService, times(1)).leaveRoom(eq(roomNotMemberOfId), any(User.class));
@@ -309,9 +322,57 @@ class ChatRoomControllerTest {
         try {
             response.andExpect(status().isForbidden());
         } catch (AssertionError e) {
-            response.andDo(print()); throw e;
+            response.andDo(print());
+            throw e;
         }
 
         verify(chatRoomService, never()).leaveRoom(anyLong(), any(User.class));
+    }
+
+    // Tests for GET /discoverable
+
+    @Test
+    @WithMockUser(username = "mockUser")
+    void getDiscoverableRooms_whenAuthenticated_shouldReturnDiscoverableRoomList() throws Exception {
+        ChatRoom discoverableRoomA = ChatRoom.builder().id(30L).name("Disco Room A").isPublic(true).createdAt(Instant.now()).build();
+        ChatRoom discoverableRoomB = ChatRoom.builder().id(31L).name("Disco Room B").isPublic(true).createdAt(Instant.now()).build();
+        List<ChatRoom> serviceResponse = List.of(discoverableRoomA, discoverableRoomB);
+
+        given(chatRoomService.findDiscoverableRooms(any(User.class))).willReturn(serviceResponse);
+
+        ResultActions response = mockMvc.perform(get("/api/rooms/discoverable")
+                .accept(MediaType.APPLICATION_JSON));
+
+        try {
+            response.andExpect(status().isOk())
+                    .andExpect(jsonPath("$", hasSize(2)))
+                    .andExpect(jsonPath("$[0].id", is(30)))
+                    .andExpect(jsonPath("$[0].name", is("Disco Room A")))
+                    .andExpect(jsonPath("$[0].public", is(true)))
+                    .andExpect(jsonPath("$[1].id", is(31)))
+                    .andExpect(jsonPath("$[1].name", is("Disco Room B")))
+                    .andExpect(jsonPath("$[1].public", is(true)));
+        } catch (AssertionError e) {
+            response.andDo(print());
+            throw e;
+        }
+
+        verify(chatRoomService, times(1)).findDiscoverableRooms(any(User.class));
+        verify(userRepository, times(1)).findByUsername("mockUser");
+    }
+
+    @Test
+    void getDiscoverableRooms_whenNotAuthenticated_shouldReturnForbidden() throws Exception {
+        ResultActions response = mockMvc.perform(get("/api/rooms/discoverable")
+                .accept(MediaType.APPLICATION_JSON));
+
+        try {
+            response.andExpect(status().isForbidden());
+        } catch (AssertionError e) {
+            response.andDo(print());
+            throw e;
+        }
+
+        verify(chatRoomService, never()).findDiscoverableRooms(any(User.class));
     }
 }

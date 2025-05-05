@@ -2,6 +2,7 @@ package com.chatapp.backend.service;
 
 import com.chatapp.backend.model.ChatRoom;
 import com.chatapp.backend.model.User;
+import com.chatapp.backend.model.dto.CreateChatRoomRequest;
 import com.chatapp.backend.repository.ChatRoomRepository;
 import com.chatapp.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -105,7 +106,14 @@ class ChatRoomServiceTest {
 
     @Test
     void createRoom_whenNameAvailable_shouldCreateAndReturnRoom() {
-        when(chatRoomRepository.findByName("New Room")).thenReturn(Optional.empty());
+        String newRoomName = "New Room";
+        boolean isPublic = true;
+
+        CreateChatRoomRequest request = new CreateChatRoomRequest();
+        request.setName(newRoomName);
+        request.setPublic(isPublic);
+
+        when(chatRoomRepository.findByName(newRoomName)).thenReturn(Optional.empty());
         when(chatRoomRepository.save(any(ChatRoom.class))).thenAnswer(invocation -> {
             ChatRoom roomArg = invocation.getArgument(0);
             roomArg.setId(11L);
@@ -113,31 +121,41 @@ class ChatRoomServiceTest {
         });
         when(userRepository.save(any(User.class))).thenReturn(testUser);
 
-
-        ChatRoom createdRoom = chatRoomService.createRoom("New Room", testUser);
+        ChatRoom createdRoom = chatRoomService.createRoom(request, testUser);
 
         assertNotNull(createdRoom);
-        assertEquals("New Room", createdRoom.getName());
+        assertEquals(newRoomName, createdRoom.getName());
+        assertEquals(isPublic, createdRoom.isPublic());
         assertEquals(testUser, createdRoom.getCreatedBy());
         assertNotNull(createdRoom.getId());
         assertTrue(createdRoom.getMembers().contains(testUser));
 
-        verify(chatRoomRepository).findByName("New Room");
-        verify(chatRoomRepository).save(any(ChatRoom.class));
+        verify(chatRoomRepository).findByName(newRoomName);
+
+        ArgumentCaptor<ChatRoom> roomCaptor = ArgumentCaptor.forClass(ChatRoom.class);
+        verify(chatRoomRepository).save(roomCaptor.capture());
+        assertThat(roomCaptor.getValue().getName()).isEqualTo(newRoomName);
+        assertThat(roomCaptor.getValue().isPublic()).isEqualTo(isPublic);
+
         verify(userRepository).save(testUser);
     }
 
     @Test
     void createRoom_whenNameExists_shouldThrowException() {
-        when(chatRoomRepository.findByName("Existing Room")).thenReturn(Optional.of(testRoom));
+        String existingRoomName = "Existing Room";
+        CreateChatRoomRequest request = new CreateChatRoomRequest();
+        request.setName(existingRoomName);
+        request.setPublic(true);
+
+        when(chatRoomRepository.findByName(existingRoomName)).thenReturn(Optional.of(testRoom));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
-            chatRoomService.createRoom("Existing Room", testUser);
+            chatRoomService.createRoom(request, testUser);
         });
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
         assertTrue(exception.getReason().contains("already exists"));
 
-        verify(chatRoomRepository).findByName("Existing Room");
+        verify(chatRoomRepository).findByName(existingRoomName);
         verify(chatRoomRepository, never()).save(any(ChatRoom.class));
         verify(userRepository, never()).save(any(User.class));
     }
@@ -303,5 +321,40 @@ class ChatRoomServiceTest {
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
         assertTrue(exception.getReason().contains("User not in room"));
         verify(userRepository, never()).save(any(User.class));
+    }
+
+    // Tests for findDiscoverableRooms
+    @Test
+    void findDiscoverableRooms_whenUserIsValid_shouldCallRepositoryAndReturnList() {
+        ChatRoom discoverableRoom1 = ChatRoom.builder().id(20L).name("Discoverable 1").isPublic(true).build();
+        ChatRoom discoverableRoom2 = ChatRoom.builder().id(21L).name("Discoverable 2").isPublic(true).build();
+        List<ChatRoom> mockRepoResponse = List.of(discoverableRoom1, discoverableRoom2);
+
+        when(chatRoomRepository.findDiscoverableRoomsForUser(testUser.getId())).thenReturn(mockRepoResponse);
+
+        List<ChatRoom> actualRooms = chatRoomService.findDiscoverableRooms(testUser);
+
+        assertThat(actualRooms).isEqualTo(mockRepoResponse);
+        assertThat(actualRooms).hasSize(2);
+        verify(chatRoomRepository, times(1)).findDiscoverableRoomsForUser(testUser.getId());
+    }
+
+    @Test
+    void findDiscoverableRooms_whenUserIsNull_shouldReturnEmptyList() {
+        List<ChatRoom> actualRooms = chatRoomService.findDiscoverableRooms(null);
+
+        assertThat(actualRooms).isNotNull().isEmpty();
+        verify(chatRoomRepository, never()).findDiscoverableRoomsForUser(anyLong());
+    }
+
+    @Test
+    void findDiscoverableRooms_whenUserHasNullId_shouldReturnEmptyList() {
+        User userWithNullId = new User();
+        userWithNullId.setUsername("noIdUser");
+
+        List<ChatRoom> actualRooms = chatRoomService.findDiscoverableRooms(userWithNullId);
+
+        assertThat(actualRooms).isNotNull().isEmpty();
+        verify(chatRoomRepository, never()).findDiscoverableRoomsForUser(anyLong());
     }
 }
