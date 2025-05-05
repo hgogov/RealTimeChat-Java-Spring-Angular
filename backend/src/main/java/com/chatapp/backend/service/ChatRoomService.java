@@ -3,6 +3,7 @@ package com.chatapp.backend.service;
 import com.chatapp.backend.config.DataInitializer;
 import com.chatapp.backend.model.ChatRoom;
 import com.chatapp.backend.model.User;
+import com.chatapp.backend.model.dto.CreateChatRoomRequest;
 import com.chatapp.backend.repository.ChatRoomRepository;
 import com.chatapp.backend.repository.UserRepository;
 import org.slf4j.Logger;
@@ -44,8 +45,11 @@ public class ChatRoomService {
     }
 
     @Transactional
-    public ChatRoom createRoom(String roomName, User creator) {
-        log.info("Attempting to create room '{}' by user '{}'", roomName, creator.getUsername());
+    public ChatRoom createRoom(CreateChatRoomRequest request, User creator) {
+        String roomName = request.getName().trim();
+        boolean isPublic = request.isPublic();
+
+        log.info("Attempting to create room '{}' (isPublic: {}) by user '{}'", roomName, isPublic, creator.getUsername());
         chatRoomRepository.findByName(roomName).ifPresent(existingRoom -> {
             log.warn("Room creation failed: Name '{}' already exists (ID: {}).", roomName, existingRoom.getId());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Room name '" + roomName + "' already exists.");
@@ -54,6 +58,7 @@ public class ChatRoomService {
         ChatRoom newRoom = ChatRoom.builder()
                 .name(roomName)
                 .createdBy(creator)
+                .isPublic(isPublic)
                 .build();
 
         newRoom.getMembers().add(creator);
@@ -62,7 +67,8 @@ public class ChatRoomService {
         ChatRoom savedRoom = chatRoomRepository.save(newRoom);
         userRepository.save(creator);
 
-        log.info("Successfully created room '{}' (ID: {}) for user '{}'", savedRoom.getName(), savedRoom.getId(), creator.getUsername());
+        log.info("Successfully created room '{}' (ID: {}, isPublic: {}) for user '{}'",
+                savedRoom.getName(), savedRoom.getId(), savedRoom.isPublic(), creator.getUsername());
         return savedRoom;
     }
 
@@ -187,5 +193,17 @@ public class ChatRoomService {
         userRepository.save(managedUser);
 
         log.info("User '{}' successfully left room '{}' (ID: {})", managedUser.getUsername(), room.getName(), room.getId());
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChatRoom> findDiscoverableRooms(User user) {
+        if (user == null || user.getId() == null) {
+            log.warn("Cannot find discoverable rooms for null user or user without ID.");
+            return List.of();
+        }
+        log.debug("Finding discoverable rooms for user '{}' (ID: {})", user.getUsername(), user.getId());
+        List<ChatRoom> rooms = chatRoomRepository.findDiscoverableRoomsForUser(user.getId());
+        log.debug("Found {} discoverable rooms for user '{}'", rooms.size(), user.getUsername());
+        return rooms;
     }
 }

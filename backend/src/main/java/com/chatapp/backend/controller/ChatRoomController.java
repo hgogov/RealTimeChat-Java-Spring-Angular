@@ -57,10 +57,10 @@ public class ChatRoomController {
     @ApiResponse(responseCode = "400", description = "Invalid request data or room name already exists")
     @ApiResponse(responseCode = "401", description = "User not authenticated")
     public ResponseEntity<ChatRoomDto> createChatRoom(@Valid @RequestBody CreateChatRoomRequest request) {
-        log.info("Received request to create room: {}", request.getName());
+        log.info("Received request to create room: Name='{}', IsPublic='{}'", request.getName(), request.isPublic());
         User currentUser = getCurrentUser();
         try {
-            ChatRoom savedRoom = chatRoomService.createRoom(request.getName().trim(), currentUser);
+            ChatRoom savedRoom = chatRoomService.createRoom(request, currentUser);
             return new ResponseEntity<>(mapToDto(savedRoom), HttpStatus.CREATED);
         } catch (ResponseStatusException e) {
             log.warn("Failed to create room '{}': {}", request.getName(), e.getReason());
@@ -96,6 +96,7 @@ public class ChatRoomController {
                 .name(room.getName())
                 .createdByUsername(room.getCreatedBy() != null ? room.getCreatedBy().getUsername() : null)
                 .createdAt(room.getCreatedAt())
+                .isPublic(room.isPublic())
                 .build();
     }
 
@@ -140,6 +141,25 @@ public class ChatRoomController {
         } catch (Exception e) {
             log.error("Unexpected error leaving room {} for user '{}'", roomId, currentUser.getUsername(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/discoverable")
+    @Operation(summary = "Get public rooms the current user can join (not already a member)")
+    @ApiResponse(responseCode = "200", description = "List of discoverable chat rooms")
+    @ApiResponse(responseCode = "401", description = "User not authenticated")
+    public ResponseEntity<List<ChatRoomDto>> getDiscoverableRooms() {
+        User currentUser = getCurrentUser();
+        log.info("Received request for discoverable rooms for user '{}'", currentUser.getUsername());
+        try {
+            List<ChatRoom> rooms = chatRoomService.findDiscoverableRooms(currentUser);
+            List<ChatRoomDto> roomDtos = rooms.stream()
+                    .map(this::mapToDto)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(roomDtos);
+        } catch (Exception e) {
+            log.error("Unexpected error fetching discoverable rooms for user '{}'", currentUser.getUsername(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(List.of());
         }
     }
 }
