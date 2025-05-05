@@ -8,6 +8,8 @@ import com.chatapp.backend.repository.UserRepository;
 import com.chatapp.backend.service.ChatRoomService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -52,8 +54,8 @@ public class ChatRoomController {
     }
 
     @PostMapping
-    @Operation(summary = "Create a new chat room")
-    @ApiResponse(responseCode = "201", description = "Chat room created successfully")
+    @Operation(summary = "Create a new chat room", description = "Creates a public or private chat room. Creator automatically joins.")
+    @ApiResponse(responseCode = "201", description = "Chat room created", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ChatRoomDto.class)))
     @ApiResponse(responseCode = "400", description = "Invalid request data or room name already exists")
     @ApiResponse(responseCode = "401", description = "User not authenticated")
     public ResponseEntity<ChatRoomDto> createChatRoom(@Valid @RequestBody CreateChatRoomRequest request) {
@@ -73,7 +75,7 @@ public class ChatRoomController {
 
     @GetMapping
     @Operation(summary = "Get chat rooms the current user is a member of")
-    @ApiResponse(responseCode = "200", description = "List of chat rooms")
+    @ApiResponse(responseCode = "200", description = "List of user's chat rooms", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ChatRoomDto.class)))
     @ApiResponse(responseCode = "401", description = "User not authenticated")
     public ResponseEntity<List<ChatRoomDto>> getUserChatRooms() {
         log.info("Received request to get user rooms");
@@ -146,7 +148,7 @@ public class ChatRoomController {
 
     @GetMapping("/discoverable")
     @Operation(summary = "Get public rooms the current user can join (not already a member)")
-    @ApiResponse(responseCode = "200", description = "List of discoverable chat rooms")
+    @ApiResponse(responseCode = "200", description = "List of discoverable chat rooms", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ChatRoomDto.class)))
     @ApiResponse(responseCode = "401", description = "User not authenticated")
     public ResponseEntity<List<ChatRoomDto>> getDiscoverableRooms() {
         User currentUser = getCurrentUser();
