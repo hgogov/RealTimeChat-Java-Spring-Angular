@@ -2,6 +2,7 @@ package com.chatapp.backend.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
@@ -24,13 +25,18 @@ public class ChatRoom {
     @Column(nullable = false, unique = true, length = 100)
     private String name;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Many rooms can be created by one user
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_user_id")
     private User createdBy;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Column(nullable = false)
+    @ColumnDefault("true")
+    @Builder.Default
+    private boolean isPublic = true;
 
     @ManyToMany(mappedBy = "chatRooms", fetch = FetchType.LAZY)
     @Builder.Default
