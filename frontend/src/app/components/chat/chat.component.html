@@ -36,9 +36,16 @@
           <div class="room-list-section">
             <h3>Your Rooms</h3>
 
-            <button mat-stroked-button color="primary" (click)="openCreateRoomDialog()" class="create-room-button">
-              <mat-icon>add</mat-icon> Create Room
-            </button>
+            <div class="room-actions">
+              <!-- Create Room Button -->
+              <button mat-stroked-button color="primary" (click)="openCreateRoomDialog()" class="action-button">
+                <mat-icon>add</mat-icon> Create Room
+              </button>
+              <!-- Join Room Button -->
+              <button mat-stroked-button color="accent" (click)="openJoinRoomDialog()" class="action-button">
+                <mat-icon>search</mat-icon> Join
+              </button>
+            </div>
 
             <!-- Custom room list wrapper -->
             <div class="room-list-wrapper">

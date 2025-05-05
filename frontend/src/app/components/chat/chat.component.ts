@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Subscription, Subject, filter, distinctUntilChanged, takeUntil, debounceTime, timer } from 'rxjs';
+import { JoinRoomDialogComponent } from '../join-room-dialog/join-room-dialog.component';
 
 // Material Modules
 import { MatCardModule } from '@angular/material/card';
@@ -323,6 +324,25 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.websocketService.sendTyping(false); // Send stop typing after delay
       }, 2000); // 2 seconds inactivity threshold
     }
+  }
+
+  openJoinRoomDialog(): void {
+      const dialogRef = this.dialog.open(JoinRoomDialogComponent, {
+          width: '450px',
+      });
+
+      dialogRef.afterClosed()
+        .pipe(takeUntil(this.destroy$))
+        .subscribe(result => {
+          console.log('Join Room Dialog closed with result:', result);
+          if (result?.joined && result?.joinedRoomName) {
+              this.snackBar.open(`Joined room "${result.joinedRoomName}"`, 'Close', { duration: 3000 });
+              this.loadUserRooms();
+              timer(100).pipe(takeUntil(this.destroy$)).subscribe(() => {
+                  this.selectRoom(result.joinedRoomName);
+              });
+          }
+      });
   }
 
   openCreateRoomDialog(): void {

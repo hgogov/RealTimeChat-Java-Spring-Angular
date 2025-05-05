@@ -213,6 +213,18 @@
   margin-top: 8px;
 }
 
+.room-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+
+    .action-button {
+        flex: 1;
+        font-size: 0.9em;
+        mat-icon { margin-right: 4px; }
+    }
+}
+
 
 /* === Online User List Item Styling === */
 .user-list mat-list-item {

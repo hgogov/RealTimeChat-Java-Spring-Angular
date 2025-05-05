@@ -1,0 +1,44 @@
+<h1 mat-dialog-title>Discover & Join Rooms</h1>
+
+<mat-dialog-content class="dialog-content">
+  <p>Select a public room to join.</p>
+
+  <div *ngIf="isLoading" class="spinner-container">
+    <mat-spinner diameter="40"></mat-spinner>
+    <p>Loading rooms...</p>
+  </div>
+
+  <div *ngIf="!isLoading && discoverableRooms.length === 0" class="no-rooms-message">
+    No new public rooms found to join.
+  </div>
+
+  <div *ngIf="!isLoading && discoverableRooms.length > 0" class="discoverable-room-list-div">
+    <div *ngFor="let room of discoverableRooms" class="discoverable-room-item-div">
+
+      <!-- Left side: Icon and Name -->
+      <div class="room-details-div">
+        <mat-icon class="room-icon-div">public</mat-icon>
+        <span class="room-name-div">{{ room.name }}</span>
+      </div>
+
+      <!-- Right side: Join Button -->
+      <button mat-flat-button
+              color="primary"
+              class="join-button"
+              [disabled]="joiningRoomId === room.id"
+              (click)="onJoinClick(room)">
+        <span *ngIf="joiningRoomId !== room.id">Join</span>
+        <mat-spinner *ngIf="joiningRoomId === room.id" diameter="20" style="margin: 0 5px;"></mat-spinner>
+      </button>
+
+    </div>
+  </div>
+
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="loadDiscoverableRooms()" [disabled]="isLoading">
+    <mat-icon>refresh</mat-icon> Refresh
+  </button>
+  <button mat-button (click)="onCancelClick()">Close</button>
+</mat-dialog-actions>

@@ -1,0 +1,94 @@
+.dialog-content {
+  min-height: 200px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-top: 10px;
+}
+
+.spinner-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  color: #757575;
+  p {
+    margin-top: 10px;
+  }
+}
+
+.no-rooms-message {
+  color: #757575;
+  font-style: italic;
+  padding: 20px;
+  text-align: center;
+}
+
+.discoverable-room-list {
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.discoverable-room-item {
+  border-bottom: 1px solid #eee;
+  height: 56px;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.discoverable-room-item-div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid #eee;
+  height: 56px;
+  box-sizing: border-box;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.room-details-div {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  margin-right: 16px;
+}
+
+.room-icon-div {
+  margin-right: 16px;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.room-name-div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1;
+}
+
+
+.join-button {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 80px;
+  height: 36px;
+  line-height: 36px;
+
+  mat-spinner {
+      display: inline-block;
+  }
+}
+
+
+mat-dialog-actions {
+    border-top: 1px solid #eee;
+    padding-top: 10px;
+    margin-top: 15px;
+}
