@@ -37,4 +37,8 @@ export class ChatRoomService {
   leaveRoom(roomId: number): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${roomId}/leave`);
   }
+
+  getDiscoverableRooms(): Observable<ChatRoom[]> {
+    return this.http.get<ChatRoom[]>(`${this.apiUrl}/discoverable`);
+  }
 }
