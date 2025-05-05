@@ -6,7 +6,7 @@
           <!-- Display current room name -->
           <span>Chat Room: {{ currentRoomName || 'Select a Room' }}</span>
           <div class="header-actions">
-            <!-- Add Button to create room -->
+            <!-- Button to create room -->
             <button mat-icon-button (click)="openCreateRoomDialog()" matTooltip="Create New Room">
               <mat-icon>add_comment</mat-icon>
             </button>
@@ -57,11 +57,12 @@
               <!-- Room items -->
               <div *ngFor="let room of availableRooms"
                    class="room-list-item"
-                   [class.active-room]="room.name === currentRoomName">
+                   [class.active-room]="room.name === currentRoomName"
+                   [class.general-room]="room.name === 'General'">
 
                 <!-- Room selection area -->
                 <div class="room-select-area" (click)="selectRoom(room.name)" matTooltip="Switch to {{ room.name }}">
-                  <mat-icon class="room-icon">forum</mat-icon>
+                  <mat-icon class="room-icon">{{ room.name === 'General' ? 'group' : 'forum' }}</mat-icon>
                   <span class="room-name">{{ room.name }}</span>
                 </div>
 
@@ -79,9 +80,10 @@
                   <button mat-menu-item
                           color="warn"
                           (click)="confirmLeaveRoom(room.id, room.name)"
-                          *ngIf="availableRooms.length > 1 && room.name !== 'General'">
-                    <mat-icon color="warn">exit_to_app</mat-icon>
-                    <span>Leave Room</span>
+                          *ngIf="availableRooms.length > 1 && room.name !== 'General'"
+                  matTooltip="Leave '{{room.name}}'">
+                  <mat-icon color="warn">exit_to_app</mat-icon>
+                  <span>Leave Room</span>
                   </button>
                 </mat-menu>
               </div>
