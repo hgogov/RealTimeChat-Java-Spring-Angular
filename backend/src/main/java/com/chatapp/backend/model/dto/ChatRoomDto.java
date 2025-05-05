@@ -2,6 +2,7 @@ package com.chatapp.backend.model.dto;
 
 import lombok.Builder;
 import lombok.Data;
+
 import java.time.Instant;
 
 @Data
@@ -11,5 +12,5 @@ public class ChatRoomDto {
     private String name;
     private String createdByUsername;
     private Instant createdAt;
-    // Potentially add member count or list of member usernames
+    private boolean isPublic;
 }
