@@ -35,7 +35,7 @@ public class ChatRoom {
 
     @Column(nullable = false)
     @ColumnDefault("true")
-    @Builder.Default
+    // @Builder.Default
     private boolean isPublic = true;
 
     @ManyToMany(mappedBy = "chatRooms", fetch = FetchType.LAZY)
