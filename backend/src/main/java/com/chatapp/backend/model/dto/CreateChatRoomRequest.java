@@ -10,5 +10,5 @@ public class CreateChatRoomRequest {
     @Size(min = 3, max = 100, message = "Room name must be between 3 and 100 characters")
     private String name;
 
-    private boolean isPublic = true;
+    private Boolean isPublic;
 }

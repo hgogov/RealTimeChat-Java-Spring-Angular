@@ -59,7 +59,7 @@ public class ChatRoomController {
     @ApiResponse(responseCode = "400", description = "Invalid request data or room name already exists")
     @ApiResponse(responseCode = "401", description = "User not authenticated")
     public ResponseEntity<ChatRoomDto> createChatRoom(@Valid @RequestBody CreateChatRoomRequest request) {
-        log.info("Received request to create room: Name='{}', IsPublic='{}'", request.getName(), request.isPublic());
+        log.info("Received request to create room: Name='{}', IsPublic='{}'", request.getName(), request.getIsPublic());
         User currentUser = getCurrentUser();
         try {
             ChatRoom savedRoom = chatRoomService.createRoom(request, currentUser);

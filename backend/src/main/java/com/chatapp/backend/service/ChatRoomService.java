@@ -47,7 +47,7 @@ public class ChatRoomService {
     @Transactional
     public ChatRoom createRoom(CreateChatRoomRequest request, User creator) {
         String roomName = request.getName().trim();
-        boolean isPublic = request.isPublic();
+        boolean isPublic = (request.getIsPublic() == null) ? true : request.getIsPublic();
 
         log.info("Attempting to create room '{}' (isPublic: {}) by user '{}'", roomName, isPublic, creator.getUsername());
         chatRoomRepository.findByName(roomName).ifPresent(existingRoom -> {
@@ -151,6 +151,10 @@ public class ChatRoomService {
                     return new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "User record not found");
                 });
 
+        if (!room.isPublic()) {
+            log.warn("User '{}' denied joining private room '{}' (ID: {})", user.getUsername(), room.getName(), roomId);
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot join private room '" + room.getName() + "' without an invitation.");
+        }
 
         if (room.getMembers().contains(managedUser)) {
             log.warn("User '{}' is already a member of room '{}'. No action taken.", managedUser.getUsername(), room.getName());
