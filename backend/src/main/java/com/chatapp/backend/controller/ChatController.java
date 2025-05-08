@@ -13,11 +13,6 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
-import java.security.Principal;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 @Controller
 public class ChatController {
 
@@ -54,28 +49,5 @@ public class ChatController {
         String destination = "/topic/typing/" + typingEvent.getRoomId();
         logger.info("Broadcasting typing event to destination: {}", destination);
         messagingTemplate.convertAndSend(destination, typingEvent);
-    }
-
-    @MessageMapping("/presence.requestList")
-    public void handlePresenceListRequest(SimpMessageHeaderAccessor headerAccessor) {
-        String sessionId = headerAccessor.getSessionId();
-        Principal user = headerAccessor.getUser();
-        String username = (user != null) ? user.getName() : "unknown";
-
-        System.out.println("Received presence list request from user: " + username + " (Session: " + sessionId + ")");
-
-        Set<String> onlineUserKeys = redisTemplate.keys("user:*:online");
-        Set<Map<String, Object>> onlineUsersList = Set.of();
-
-        if (onlineUserKeys != null && !onlineUserKeys.isEmpty()) {
-            onlineUsersList = onlineUserKeys.stream()
-                    .map(key -> key.substring("user:".length(), key.indexOf(":online")))
-                    .map(name -> Map.<String, Object>of("username", name, "online", true))
-                    .collect(Collectors.toSet());
-        }
-
-        System.out.println("Sending presence list back via /topic/presence.list: " + onlineUsersList);
-
-        messagingTemplate.convertAndSend("/topic/presence.list", onlineUsersList);
     }
 }
