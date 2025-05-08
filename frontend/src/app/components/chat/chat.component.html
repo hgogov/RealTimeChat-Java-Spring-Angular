@@ -94,21 +94,23 @@
 
           <!-- Online User List -->
           <div class="online-list-section">
-            <h3>Online Users</h3>
+            <h3 *ngIf="websocketService.currentRoomPresence$ | async as onlineUsersForCount">
+              Online Users ({{ (onlineUsersForCount | filterCurrentUser:currentUser?.username)?.length || 0 }})
+            </h3>
             <mat-list dense class="user-list">
-              <mat-list-item *ngIf="onlineUsers.length === 0">
-                <span class="no-users-message">No other users online.</span>
-              </mat-list-item>
-              <!-- User list item structure -->
-              <mat-list-item *ngFor="let user of onlineUsers">
-                <mat-icon
-                  matListItemIcon
-                  class="user-dot"
-                  [ngClass]="{'dot-online': user.online, 'dot-offline': !user.online}">
-                  circle
-                </mat-icon>
-                <span matListItemTitle>{{ user.username }}</span>
-              </mat-list-item>
+              <!-- async pipe for the list -->
+              <ng-container *ngIf="websocketService.currentRoomPresence$ | async as onlineUsers">
+                <mat-list-item *ngIf="(onlineUsers | filterCurrentUser:currentUser?.username)?.length === 0">
+                  <span class="no-users-message">No other users online.</span>
+                </mat-list-item>
+                <!-- Iterate over filtered list -->
+                <mat-list-item *ngFor="let user of onlineUsers | filterCurrentUser:currentUser?.username">
+                  <mat-icon matListItemIcon class="user-dot" [ngClass]="{'dot-online': user.online}">
+                    circle
+                  </mat-icon>
+                  <span matListItemTitle>{{ user.username }}</span>
+                </mat-list-item>
+              </ng-container>
             </mat-list>
           </div> <!-- End Online User List Section -->
 

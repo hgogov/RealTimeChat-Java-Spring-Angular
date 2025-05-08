@@ -41,8 +41,8 @@ export class WebsocketService implements OnDestroy {
   private messagesSubject = new Subject<ChatMessage>();
   public messages$ = this.messagesSubject.asObservable();
 
-  private presenceSubject = new BehaviorSubject<PresenceEvent[]>([]);
-  public presence$ = this.presenceSubject.asObservable();
+  private currentRoomPresenceSubject = new BehaviorSubject<PresenceEvent[]>([]);
+  public currentRoomPresence$ = this.currentRoomPresenceSubject.asObservable();
 
   private typingSubject = new BehaviorSubject<TypingEvent | null>(null);
   public typing$ = this.typingSubject.asObservable();
@@ -54,8 +54,7 @@ export class WebsocketService implements OnDestroy {
   // Subscription references
   private roomMessageSubscription?: StompSubscription;
   private roomTypingSubscription?: StompSubscription;
-  private presenceSubscription?: StompSubscription;
-  private presenceListSubscription?: StompSubscription;
+  private roomPresenceSubscription?: StompSubscription;
 
   constructor(private authService: AuthService) {
     this.initializeClient();
@@ -65,6 +64,11 @@ export class WebsocketService implements OnDestroy {
     } else {
       this.connectionState$.next(false);
     }
+  }
+
+  public setCurrentRoomPresence(users: PresenceEvent[]): void {
+      console.log('[WebSocketService] Setting initial room presence:', users);
+      this.currentRoomPresenceSubject.next(users);
   }
 
   private initializeClient(): void {
@@ -124,12 +128,11 @@ export class WebsocketService implements OnDestroy {
   private handleConnect(frame: IFrame): void {
     console.log('[WebSocket] Connection established. User:', frame?.headers['user-name']);
     this.connectionState$.next(true);
-    this.initializePresenceTracking(); // Subscribe to presence topics
 
     const intendedRoom = this.currentRoomSubject.value;
     if (intendedRoom) {
-      console.log(`[WebSocket] Re-joining intended room after connect: ${intendedRoom}`);
-      this.joinRoom(intendedRoom); // Call joinRoom which handles subscriptions
+        console.log(`[WebSocket] Re-joining intended room after connect: ${intendedRoom}`);
+        this.joinRoom(intendedRoom);
     }
     this.connectionRetryTimer?.unsubscribe();
   }
@@ -160,89 +163,6 @@ export class WebsocketService implements OnDestroy {
     this.clearSubscriptions();
   }
 
-  // --- Presence Handling ---
-
-  private initializePresenceTracking(): void {
-    if (!this.client.connected) {
-        console.warn('[WebSocket] Cannot initialize presence tracking - client not connected.');
-        return;
-    }
-
-    console.log('[WebSocket] Initializing presence subscriptions...');
-    if (this.presenceSubscription) this.presenceSubscription.unsubscribe();
-    if (this.presenceListSubscription) this.presenceListSubscription.unsubscribe();
-
-    // 1. Subscribe to SINGLE presence updates
-    this.presenceSubscription = this.client.subscribe(
-        '/topic/presence',
-        (message: IMessage) => this.processPresenceUpdate(message),
-        { id: 'topic-presence-sub', ...this.getAuthHeaders() }
-    );
-
-    // 2. Subscribe to the FULL LIST broadcast topic
-    this.presenceListSubscription = this.client.subscribe(
-        '/topic/presence.list',
-        (message: IMessage) => this.processPresenceList(message),
-        { id: 'topic-presence-list-sub', ...this.getAuthHeaders() }
-    );
-
-    // 3. Request the initial list AFTER subscriptions are set up
-    timer(500).pipe(takeUntil(this.destroy$)).subscribe(() => {
-        this.requestInitialPresenceList();
-    });
-  }
-
-  private processPresenceUpdate(message: IMessage): void {
-      try {
-        const update: PresenceEvent = JSON.parse(message.body);
-        console.log('[WebSocket] Received presence update on /topic/presence:', update);
-        if (update && typeof update === 'object' && update.username) {
-          const currentUsers = [...this.presenceSubject.value];
-          const index = currentUsers.findIndex(u => u.username === update.username);
-
-          if (update.online) {
-            if (index > -1) currentUsers[index] = update;
-            else currentUsers.push(update);
-            this.presenceSubject.next(currentUsers);
-          } else {
-            if (index > -1) {
-              const nextUsers = currentUsers.filter(u => u.username !== update.username);
-              this.presenceSubject.next(nextUsers);
-            }
-          }
-        } else { console.warn('[WebSocket] Invalid presence update format'); }
-      } catch (e) { console.error('[WebSocket] Failed to parse presence update:', e); }
-  }
-
-  private processPresenceList(message: IMessage): void {
-      try {
-        const fullList: PresenceEvent[] = JSON.parse(message.body);
-        console.log('[WebSocket] Received presence list on /topic/presence.list:', fullList);
-        if (Array.isArray(fullList)) {
-           const onlineUsers = fullList.filter(u => u.online);
-           console.log('[WebSocket] Emitting full online presence list:', onlineUsers);
-           this.presenceSubject.next([...onlineUsers]);
-        } else { console.warn('[WebSocket] Invalid presence list format'); }
-      } catch (e) { console.error('[WebSocket] Failed to parse presence list:', e); }
-  }
-
-  private requestInitialPresenceList(): void {
-      if (!this.client.connected) {
-          console.warn('[WebSocket] Cannot request presence list, client not connected.');
-          return;
-      }
-      console.log('[WebSocket] Sending request for initial presence list to /app/presence.requestList');
-      try {
-        this.client.publish({
-            destination: '/app/presence.requestList',
-            body: '',
-            headers: this.getAuthHeaders()
-        });
-      } catch (e) {
-          console.error('[WebSocket] Error publishing presence list request:', e);
-      }
-  }
-
 
   // --- Room Handling ---
 
@@ -262,8 +182,12 @@ export class WebsocketService implements OnDestroy {
     }
 
     console.log(`[WebSocket] Attempting to join room: ${roomId}`);
+
     this.leaveCurrentRoom();
     this.currentRoomSubject.next(roomId);
+    this.currentRoomPresenceSubject.next([]);
+    this.typingSubject.next(null);
+
     this.subscribeToRoomTopics(roomId);
   }
 
@@ -277,6 +201,9 @@ export class WebsocketService implements OnDestroy {
      // Ensure old subs are cleared
      if(this.roomMessageSubscription) this.roomMessageSubscription.unsubscribe();
      if(this.roomTypingSubscription) this.roomTypingSubscription.unsubscribe();
+     if(this.roomPresenceSubscription) this.roomPresenceSubscription.unsubscribe();
+
+     const subscriptionHeaders = this.getAuthHeaders();
 
      // Subscribe to new chat messages
      const messageDestination = `/topic/chat/${roomId}`;
@@ -288,7 +215,7 @@ export class WebsocketService implements OnDestroy {
              this.messagesSubject.next(chatMessage);
          } catch (e) { console.error('[WebSocket] Failed to parse chat message:', e); }
        },
-       { id: `room-${roomId}-msg-sub`, ...this.getAuthHeaders() }
+       { id: `room-${roomId}-msg-sub`, ...subscriptionHeaders }
      );
      console.log(`[WebSocket] Subscribed to ${messageDestination}`);
 
@@ -305,26 +232,53 @@ export class WebsocketService implements OnDestroy {
              }
           } catch (e) { console.error('[WebSocket] Failed to parse typing message:', e); }
        },
-       { id: `room-${roomId}-typing-sub`, ...this.getAuthHeaders() }
+       { id: `room-${roomId}-typing-sub`, ...subscriptionHeaders }
      );
      console.log(`[WebSocket] Subscribed to ${typingDestination}`);
+
+     const presenceDestination = `/topic/presence/${roomId}`;
+     this.roomPresenceSubscription = this.client.subscribe(
+         presenceDestination,
+         (message: IMessage) => this.handleRoomPresenceUpdate(message),
+         { id: `room-${roomId}-presence-sub`, ...subscriptionHeaders }
+     );
+     console.log(`[WebSocket] Subscribed to ${presenceDestination}`);
   }
+
+
+  private handleRoomPresenceUpdate(message: IMessage): void {
+      try {
+          const update: PresenceEvent = JSON.parse(message.body);
+          console.log('[WebSocket] Received ROOM presence update:', update);
+           if (update && typeof update === 'object' && update.username) {
+              const currentUsers = [...this.currentRoomPresenceSubject.value];
+              const index = currentUsers.findIndex(u => u.username === update.username);
+
+              if (update.online) {
+                  if (index === -1) { currentUsers.push(update); }
+                  else { currentUsers[index] = update; }
+              } else {
+                  if (index > -1) { currentUsers.splice(index, 1); }
+              }
+              this.currentRoomPresenceSubject.next(currentUsers);
+           } else { console.warn('[WebSocket] Invalid room presence update format'); }
+      } catch (e) { console.error('[WebSocket] Failed to parse room presence update:', e);
+        }
+      }
+
 
   public leaveCurrentRoom(): void {
     const roomToLeave = this.currentRoomSubject.value;
       if (roomToLeave) {
-      console.log(`[WebSocket] Leaving room: ${roomToLeave}`);
-      if (this.roomMessageSubscription) {
-          try { this.roomMessageSubscription.unsubscribe(); } catch(e){}
-          this.roomMessageSubscription = undefined;
+          console.log(`[WebSocket] Leaving room: ${roomToLeave}`);
+          if (this.roomMessageSubscription) { try { this.roomMessageSubscription.unsubscribe(); } catch(e){} this.roomMessageSubscription = undefined; }
+          if (this.roomTypingSubscription) { try { this.roomTypingSubscription.unsubscribe(); } catch(e){} this.roomTypingSubscription = undefined; }
+          if (this.roomPresenceSubscription) { try { this.roomPresenceSubscription.unsubscribe(); console.log(`[WebSocket] Unsubscribed from /topic/presence/${roomToLeave}`); } catch(e){} this.roomPresenceSubscription = undefined; }
+
+          this.typingSubject.next(null);
+          this.currentRoomPresenceSubject.next([]);
+          this.currentRoomSubject.next(null);
       }
-      if (this.roomTypingSubscription) {
-          try { this.roomTypingSubscription.unsubscribe(); } catch(e){}
-          this.roomTypingSubscription = undefined;
-      }
-      this.typingSubject.next(null);
-      this.currentRoomSubject.next(null);
-    }
   }
 
   // --- Sending Actions ---
@@ -418,10 +372,7 @@ export class WebsocketService implements OnDestroy {
     console.log('[WebSocket] Clearing ALL local STOMP subscriptions...');
     this.leaveCurrentRoom();
 
-    if (this.presenceSubscription) { try { this.presenceSubscription.unsubscribe(); } catch(e) {} this.presenceSubscription = undefined; }
-    if (this.presenceListSubscription) { try { this.presenceListSubscription.unsubscribe(); } catch(e) {} this.presenceListSubscription = undefined; }
-
-    this.presenceSubject.next([]);
+    this.currentRoomPresenceSubject.next([]);
     this.typingSubject.next(null);
     this.currentRoomSubject.next(null);
   }

@@ -1,9 +1,8 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, ChangeDetectorRef, inject } from '@angular/core';
+import { CommonModule, AsyncPipe, DatePipe } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Subscription, Subject, filter, distinctUntilChanged, takeUntil, debounceTime, timer } from 'rxjs';
-import { JoinRoomDialogComponent } from '../join-room-dialog/join-room-dialog.component';
 
 // Material Modules
 import { MatCardModule } from '@angular/material/card';
@@ -17,13 +16,20 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
 // App Services and Interfaces
 import { WebsocketService, ChatMessage, PresenceEvent, TypingEvent } from '../../services/websocket.service';
 import { AuthService } from '../../services/auth.service';
 import { MessageService } from '../../services/message.service';
 import { ChatRoomService, ChatRoom } from '../../services/chat-room.service';
+import { PresenceService } from '../../services/presence.service';
 import { CreateRoomDialogComponent } from '../create-room-dialog/create-room-dialog.component';
+import { JoinRoomDialogComponent } from '../join-room-dialog/join-room-dialog.component';
+
+// App Pipes
+import { FilterCurrentUserPipe } from '../../pipes/filter-current-user.pipe';
 
 @Component({
   selector: 'app-chat',
@@ -31,6 +37,9 @@ import { CreateRoomDialogComponent } from '../create-room-dialog/create-room-dia
   imports: [
     CommonModule,
     ReactiveFormsModule,
+    AsyncPipe,
+    DatePipe,
+    FilterCurrentUserPipe,
     MatCardModule,
     MatFormFieldModule,
     MatInputModule,
@@ -42,6 +51,7 @@ import { CreateRoomDialogComponent } from '../create-room-dialog/create-room-dia
     MatSnackBarModule,
     MatDialogModule,
     MatTooltipModule,
+    MatProgressSpinnerModule,
   ],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss']
@@ -51,7 +61,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   messages: ChatMessage[] = [];
   currentRoomName: string | null = null;
   currentUser: { username: string } | null = null;
-  onlineUsers: PresenceEvent[] = [];
   isSomeoneTyping = false;
   typingUsername = '';
   availableRooms: ChatRoom[] = [];
@@ -61,17 +70,19 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   private destroy$ = new Subject<void>();
   private typingTimeout: any;
 
-  constructor(
-    private fb: FormBuilder,
-    private websocketService: WebsocketService,
-    private authService: AuthService,
-    private messageService: MessageService,
-    private router: Router,
-    private snackBar: MatSnackBar,
-    private cdRef: ChangeDetectorRef,
-    private dialog: MatDialog,
-    private chatRoomService: ChatRoomService
-  ) {
+  private fb = inject(FormBuilder);
+  public websocketService = inject(WebsocketService);
+  private authService = inject(AuthService);
+  private messageService = inject(MessageService);
+  private router = inject(Router);
+  private snackBar = inject(MatSnackBar);
+  private cdRef = inject(ChangeDetectorRef);
+  private dialog = inject(MatDialog);
+  private chatRoomService = inject(ChatRoomService);
+  private presenceService = inject(PresenceService);
+
+
+  constructor() {
     this.messageForm = this.fb.group({
       content: ['']
     });
@@ -79,7 +90,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   ngOnInit(): void {
     this.setupUserSubscription();
-    this.setupPresenceSubscription();
     this.setupTypingSubscription();
     this.setupRoomSubscription();
     this.setupMessageSubscription();
@@ -101,16 +111,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       .pipe(takeUntil(this.destroy$))
       .subscribe(user => {
         this.currentUser = user;
-        this.cdRef.detectChanges();
-      });
-  }
-
-  private setupPresenceSubscription(): void {
-    this.websocketService.presence$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe((users: PresenceEvent[]) => {
-        const currentUsername = this.currentUser?.username;
-        this.onlineUsers = users.filter(u => u.username !== currentUsername);
         this.cdRef.detectChanges();
       });
   }
@@ -147,8 +147,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
                 this.isSomeoneTyping = false;
                 this.typingUsername = '';
                 this.loadInitialMessages(roomName);
+                this.loadInitialRoomPresence(roomName);
             } else if (!roomName) {
                  this.messages = [];
+                 this.websocketService.setCurrentRoomPresence([]);
             }
              this.cdRef.detectChanges();
         });
@@ -162,6 +164,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
             )
             .subscribe({
                 next: (newMessage: ChatMessage) => {
+                     console.log('[ChatComponent] Received NEW message for current room:', newMessage);
                     if (!this.messages.some(m => m.id === newMessage.id && m.timestamp === newMessage.timestamp)) {
                         this.messages = [...this.messages, newMessage];
                         this.shouldScrollToBottom = true;
@@ -192,10 +195,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
                   const currentRoomStillExists = previouslySelectedRoom && rooms.some(r => r.name === previouslySelectedRoom);
 
                   if (currentRoomStillExists) {
-                      console.log(`[ChatComponent] Current room '${previouslySelectedRoom}' still exists.`);
+                       console.log(`[ChatComponent] Current room '${previouslySelectedRoom}' still exists.`);
                   } else if (rooms.length > 0) {
                       const roomToJoin = rooms.find(r => r.name.toLowerCase() === 'general') || rooms[0];
-                      console.log(`[ChatComponent] Current room '${previouslySelectedRoom}' gone or none selected. Selecting default/first: '${roomToJoin.name}'`);
+                      console.log(`[ChatComponent] Selecting default/first room: '${roomToJoin.name}'`);
                        timer(100).pipe(takeUntil(this.destroy$)).subscribe(() => {
                           this.selectRoom(roomToJoin.name);
                        });
@@ -235,58 +238,63 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
             }
             this.shouldScrollToBottom = true;
             this.cdRef.detectChanges();
-            timer(0).subscribe(() => this.scrollToBottom());
+            timer(0).pipe(takeUntil(this.destroy$)).subscribe(() => this.scrollToBottom());
         },
         error: (err: any) => {
           this.snackBar.open('Failed to load messages', 'Close', { duration: 3000 });
-          console.error('[ChatComponent] Error loading messages:', err);
+          console.error(`[ChatComponent] Error loading messages for room ${roomId}:`, err);
         }
       });
   }
 
+  loadInitialRoomPresence(roomName: string): void {
+    if (!roomName) return;
+    console.log(`[ChatComponent] Loading initial presence for room: ${roomName}`);
+
+    const room = this.availableRooms.find(r => r.name === roomName);
+    if (!room) {
+        console.error(`[ChatComponent] Cannot load presence: Room ID not found for room name '${roomName}'`);
+        this.websocketService.setCurrentRoomPresence([]);
+        return;
+    }
+    const roomId = room.id;
+
+    this.presenceService.getOnlineMembers(roomId)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+            next: (onlineUsernames: string[]) => {
+                console.log(`[ChatComponent] Received initial online members for room ${roomName}:`, onlineUsernames);
+                const initialPresenceList = onlineUsernames
+                    .map(username => ({ username: username, online: true }));
+                this.websocketService.setCurrentRoomPresence(initialPresenceList);
+            },
+            error: (err) => {
+                console.error(`[ChatComponent] Error loading initial presence for room ${roomName}:`, err);
+                this.snackBar.open(`Failed to load online users for ${roomName}`, 'Close', { duration: 3000 });
+                 this.websocketService.setCurrentRoomPresence([]); // Clear presence in service on error
+            }
+        });
+  }
+
+
   // --- UI Actions ---
 
-  confirmLeaveRoom(roomId: number, roomName: string): void {
-      this.leaveRoom(roomId, roomName);
-  }
-
-  private leaveRoom(roomId: number, roomName: string): void {
-      console.log(`[ChatComponent] Attempting to leave room ID: ${roomId} (${roomName})`);
-      this.chatRoomService.leaveRoom(roomId)
-          .pipe(takeUntil(this.destroy$))
-          .subscribe({
-              next: () => {
-                  this.snackBar.open(`You have left room "${roomName}"`, 'Close', { duration: 3000 });
-                  if (this.currentRoomName === roomName) {
-                      this.websocketService.leaveCurrentRoom();
-                  }
-                  this.loadUserRooms();
-              },
-              error: (err) => {
-                   console.error(`[ChatComponent] Error leaving room ${roomId}:`, err);
-                   const errorMsg = err?.error?.message || 'Failed to leave room.';
-                   this.snackBar.open(errorMsg, 'Close', { duration: 4000 });
-              }
-          });
-  }
-
   selectRoom(roomName: string | null): void {
-    if (roomName && this.availableRooms.some(r => r.name === roomName)) {
-        if (roomName !== this.currentRoomName) {
-           console.log(`[ChatComponent] Selecting room: ${roomName}`);
-           this.websocketService.joinRoom(roomName);
-        }
-    } else if (roomName === null && this.currentRoomName) {
-         console.log('[ChatComponent] Deselecting room (clearing selection).');
-         this.websocketService.leaveCurrentRoom();
-    } else if (roomName) {
-         console.warn(`[ChatComponent] Attempted to select room '${roomName}' which is not in the available list.`);
-    }
+      if (roomName && this.availableRooms.some(r => r.name === roomName)) {
+          if (roomName !== this.currentRoomName) {
+             console.log(`[ChatComponent] Selecting room: ${roomName}`);
+             this.websocketService.joinRoom(roomName);
+          }
+      } else if (roomName === null && this.currentRoomName) {
+           console.log('[ChatComponent] Deselecting room (clearing selection).');
+           this.websocketService.leaveCurrentRoom();
+      } else if (roomName) {
+           console.warn(`[ChatComponent] Attempted to select room '${roomName}' which is not in the available list.`);
+      }
   }
 
   sendMessage(): void {
     if (this.messageForm.invalid || !this.currentUser || !this.currentRoomName) return;
-
     const messageContent = this.messageForm.value.content?.trim();
     if (!messageContent) return;
 
@@ -294,46 +302,48 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.websocketService.sendTyping(false);
     this.isSomeoneTyping = false;
 
-
     const message: Omit<ChatMessage, 'sender' | 'timestamp' | 'id' | 'roomId'> = {
       content: messageContent,
     };
 
     this.websocketService.sendMessage(message)
-        .then(() => {
-             this.messageForm.reset();
-        })
+        .then(() => { this.messageForm.reset(); })
         .catch((err: any) => {
              this.snackBar.open('Failed to send message', 'Close', { duration: 3000 });
              console.error('[ChatComponent] Error sending message:', err);
         });
   }
 
-  // Handle user typing input
   onMessageInput(event: Event): void {
     const input = event.target as HTMLInputElement;
     const isTyping = input.value.length > 0;
-
     this.websocketService.sendTyping(isTyping);
-
-    // Debounce sending 'stop typing'
     if (this.typingTimeout) clearTimeout(this.typingTimeout);
-
     if (isTyping) {
-      this.typingTimeout = setTimeout(() => {
-        this.websocketService.sendTyping(false); // Send stop typing after delay
-      }, 2000); // 2 seconds inactivity threshold
+      this.typingTimeout = setTimeout(() => { this.websocketService.sendTyping(false); }, 2000);
     }
   }
 
-  openJoinRoomDialog(): void {
-      const dialogRef = this.dialog.open(JoinRoomDialogComponent, {
-          width: '450px',
+  openCreateRoomDialog(): void {
+      const dialogRef = this.dialog.open(CreateRoomDialogComponent, { width: '350px', disableClose: true });
+      dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe(result => {
+          console.log('Create Room Dialog closed with result:', result);
+          if (result?.roomCreated && result?.newRoom) {
+              this.loadUserRooms();
+              timer(200).pipe(takeUntil(this.destroy$)).subscribe(() => {
+                   if (this.availableRooms.some(r => r.name === result.newRoom.name)) {
+                     this.selectRoom(result.newRoom.name);
+                   } else {
+                     console.warn(`Newly created room '${result.newRoom.name}' not found in list after reload.`);
+                   }
+              });
+          }
       });
+  }
 
-      dialogRef.afterClosed()
-        .pipe(takeUntil(this.destroy$))
-        .subscribe(result => {
+  openJoinRoomDialog(): void {
+      const dialogRef = this.dialog.open(JoinRoomDialogComponent, { width: '450px' });
+      dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe(result => {
           console.log('Join Room Dialog closed with result:', result);
           if (result?.joined && result?.joinedRoomName) {
               this.snackBar.open(`Joined room "${result.joinedRoomName}"`, 'Close', { duration: 3000 });
@@ -345,26 +355,31 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       });
   }
 
-  openCreateRoomDialog(): void {
-      const dialogRef = this.dialog.open(CreateRoomDialogComponent, {
-          width: '350px',
-          disableClose: true
-      });
-      dialogRef.afterClosed()
-        .pipe(takeUntil(this.destroy$))
-        .subscribe(result => {
-          console.log('Create Room Dialog closed with result:', result);
-          if (result?.roomCreated && result?.newRoom) {
-              this.loadUserRooms();
-              timer(200).pipe(takeUntil(this.destroy$)).subscribe(() => {
-                  this.selectRoom(result.newRoom.name);
-              });
-          }
-      });
-  }
+   confirmLeaveRoom(roomId: number, roomName: string): void {
+        this.leaveRoom(roomId, roomName);
+   }
+
+    private leaveRoom(roomId: number, roomName: string): void {
+        console.log(`[ChatComponent] Attempting to leave room ID: ${roomId} (${roomName})`);
+        this.chatRoomService.leaveRoom(roomId)
+            .pipe(takeUntil(this.destroy$))
+            .subscribe({
+                next: () => {
+                    this.snackBar.open(`You have left room "${roomName}"`, 'Close', { duration: 3000 });
+                    this.loadUserRooms();
+                },
+                error: (err: any) => {
+                     console.error(`[ChatComponent] Error leaving room ${roomId}:`, err);
+                     const errorMsg = err?.error?.message || 'Failed to leave room.';
+                     this.snackBar.open(errorMsg, 'Close', { duration: 4000 });
+                }
+            });
+    }
+
 
   logout(): void {
     this.authService.logout();
+    this.websocketService.disconnect();
     this.router.navigate(['/login']);
   }
 
