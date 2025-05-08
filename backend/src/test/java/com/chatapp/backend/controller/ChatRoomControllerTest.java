@@ -77,10 +77,10 @@ class ChatRoomControllerTest {
     void createChatRoom_whenValidRequest_shouldReturnCreated() throws Exception {
         CreateChatRoomRequest request = new CreateChatRoomRequest();
         request.setName("Room 1");
-        request.setPublic(true);
+        request.setIsPublic(true);
 
         given(chatRoomService.createRoom(
-                argThat(req -> req.getName().equals("Room 1") && req.isPublic() == true),
+                argThat(req -> req.getName().equals("Room 1") && req.getIsPublic() == true),
                 any(User.class)
         )).willReturn(room1);
 
@@ -98,7 +98,7 @@ class ChatRoomControllerTest {
         }
 
         verify(chatRoomService, times(1)).createRoom(
-                argThat(req -> req.getName().equals("Room 1") && req.isPublic() == true),
+                argThat(req -> req.getName().equals("Room 1") && req.getIsPublic() == true),
                 any(User.class)
         );
         verify(userRepository, times(1)).findByUsername("mockUser");

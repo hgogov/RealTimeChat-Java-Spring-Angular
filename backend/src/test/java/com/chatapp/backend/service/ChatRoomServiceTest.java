@@ -48,21 +48,16 @@ class ChatRoomServiceTest {
         testUser.setId(1L);
         testUser.setUsername("testuser");
         testUser.setChatRooms(new HashSet<>());
-
         anotherUser = new User();
         anotherUser.setId(2L);
         anotherUser.setUsername("anotheruser");
         anotherUser.setChatRooms(new HashSet<>());
 
-
-        testRoom = ChatRoom.builder()
-                .id(10L)
-                .name("Test Room")
-                .createdBy(testUser)
-                .members(new HashSet<>())
-                .build();
-        testRoom.getMembers().add(testUser);
-        testUser.getChatRooms().add(testRoom);
+        testRoom = new ChatRoom();
+        testRoom.setId(10L);
+        testRoom.setName("Test Room");
+        testRoom.setCreatedBy(testUser);
+        testRoom.setMembers(new HashSet<>());
     }
 
     @Test
@@ -111,7 +106,7 @@ class ChatRoomServiceTest {
 
         CreateChatRoomRequest request = new CreateChatRoomRequest();
         request.setName(newRoomName);
-        request.setPublic(isPublic);
+        request.setIsPublic(isPublic);
 
         when(chatRoomRepository.findByName(newRoomName)).thenReturn(Optional.empty());
         when(chatRoomRepository.save(any(ChatRoom.class))).thenAnswer(invocation -> {
@@ -145,7 +140,7 @@ class ChatRoomServiceTest {
         String existingRoomName = "Existing Room";
         CreateChatRoomRequest request = new CreateChatRoomRequest();
         request.setName(existingRoomName);
-        request.setPublic(true);
+        request.setIsPublic(true);
 
         when(chatRoomRepository.findByName(existingRoomName)).thenReturn(Optional.of(testRoom));
 
@@ -187,9 +182,6 @@ class ChatRoomServiceTest {
 
         when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
         when(userRepository.findById(anotherUser.getId())).thenReturn(Optional.of(anotherUser));
-
-        assertThat(testRoom.getMembers()).doesNotContain(anotherUser);
-
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         chatRoomService.joinRoom(roomId, anotherUser);
@@ -197,7 +189,9 @@ class ChatRoomServiceTest {
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
         User savedUser = userCaptor.getValue();
-        assertThat(savedUser.getChatRooms()).contains(testRoom);
+
+        assertThat(savedUser.getChatRooms()).as("Check if user's room set contains the joined room")
+                .anyMatch(room -> room.getId().equals(roomId));
 
         verify(chatRoomRepository).findById(roomId);
         verify(userRepository).findById(anotherUser.getId());
@@ -238,10 +232,11 @@ class ChatRoomServiceTest {
     void joinRoom_whenUserAlreadyMember_shouldThrowBadRequestException() {
         Long roomId = testRoom.getId();
 
+        testRoom.getMembers().add(testUser);
+        testUser.getChatRooms().add(testRoom);
+
         when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
         when(userRepository.findById(testUser.getId())).thenReturn(Optional.of(testUser));
-
-        assertTrue(testRoom.getMembers().contains(testUser));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
             chatRoomService.joinRoom(roomId, testUser);
@@ -259,9 +254,11 @@ class ChatRoomServiceTest {
     void leaveRoom_whenRoomAndUserExistAndIsMember_shouldRemoveUserFromRoom() {
         Long roomId = testRoom.getId();
 
+        testRoom.getMembers().add(testUser);
+        testUser.getChatRooms().add(testRoom);
+
         when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
         when(userRepository.findById(testUser.getId())).thenReturn(Optional.of(testUser));
-        assertTrue(testRoom.getMembers().contains(testUser));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         chatRoomService.leaveRoom(roomId, testUser);
@@ -269,7 +266,8 @@ class ChatRoomServiceTest {
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
         User savedUser = userCaptor.getValue();
-        assertThat(savedUser.getChatRooms()).doesNotContain(testRoom);
+        assertThat(savedUser.getChatRooms()).as("Check if user's room set no longer contains the left room")
+                .noneMatch(room -> room.getId().equals(roomId));
 
         verify(chatRoomRepository).findById(roomId);
         verify(userRepository).findById(testUser.getId());
@@ -310,10 +308,14 @@ class ChatRoomServiceTest {
     void leaveRoom_whenUserNotMember_shouldThrowBadRequestException() {
         Long roomId = testRoom.getId();
 
+        testRoom.getMembers().remove(anotherUser);
+        anotherUser.getChatRooms().removeIf(r -> r.getId().equals(roomId));
+
+
         when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
         when(userRepository.findById(anotherUser.getId())).thenReturn(Optional.of(anotherUser));
-        assertFalse(testRoom.getMembers().contains(anotherUser));
 
+        // Act & Assert
         ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
             chatRoomService.leaveRoom(roomId, anotherUser);
         });
