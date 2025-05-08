@@ -4,6 +4,7 @@ import com.chatapp.backend.model.ChatRoom;
 import com.chatapp.backend.model.User;
 import com.chatapp.backend.model.dto.ChatRoomDto;
 import com.chatapp.backend.model.dto.CreateChatRoomRequest;
+import com.chatapp.backend.repository.ChatRoomRepository;
 import com.chatapp.backend.repository.UserRepository;
 import com.chatapp.backend.service.ChatRoomService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,10 +35,12 @@ public class ChatRoomController {
 
     private final ChatRoomService chatRoomService;
     private final UserRepository userRepository;
+    private final ChatRoomRepository chatRoomRepository;
 
-    public ChatRoomController(ChatRoomService chatRoomService, UserRepository userRepository) {
+    public ChatRoomController(ChatRoomService chatRoomService, UserRepository userRepository, ChatRoomRepository chatRoomRepository) {
         this.chatRoomService = chatRoomService;
         this.userRepository = userRepository;
+        this.chatRoomRepository = chatRoomRepository;
     }
 
     private User getCurrentUser() {
@@ -162,6 +165,36 @@ public class ChatRoomController {
         } catch (Exception e) {
             log.error("Unexpected error fetching discoverable rooms for user '{}'", currentUser.getUsername(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(List.of());
+        }
+    }
+
+    @GetMapping("/{roomId}/presence")
+    @Operation(summary = "Get list of usernames currently online in a specific room")
+    @ApiResponse(responseCode = "200", description = "List of online usernames")
+    @ApiResponse(responseCode = "401", description = "User not authenticated")
+    @ApiResponse(responseCode = "403", description = "User not member of the room")
+    @ApiResponse(responseCode = "404", description = "Room not found")
+    public ResponseEntity<List<String>> getRoomOnlineMembers(
+            @Parameter(description = "ID of the chat room", required = true) @PathVariable Long roomId) {
+
+        User currentUser = getCurrentUser();
+
+        if (!chatRoomService.isUserMemberOfRoom(currentUser.getUsername(), chatRoomRepository.findById(roomId).map(ChatRoom::getName).orElse(null))) {
+            log.warn("User '{}' attempted to get presence for room ID {} they are not a member of.", currentUser.getUsername(), roomId);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+
+        log.info("Received request for online members in room ID: {} by user '{}'", roomId, currentUser.getUsername());
+        try {
+            List<String> onlineMembers = chatRoomService.getOnlineMembers(roomId);
+            return ResponseEntity.ok(onlineMembers);
+        } catch (ResponseStatusException e) {
+            log.warn("Failed to get presence for room {}: Status={}, Reason={}", roomId, e.getStatusCode(), e.getReason());
+            return ResponseEntity.status(e.getStatusCode()).body(null);
+        } catch (Exception e) {
+            log.error("Unexpected error fetching presence for room {} for user '{}'", roomId, currentUser.getUsername(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }
 }

@@ -8,6 +8,7 @@ import com.chatapp.backend.repository.ChatRoomRepository;
 import com.chatapp.backend.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class ChatRoomService {
@@ -23,10 +25,12 @@ public class ChatRoomService {
 
     private final ChatRoomRepository chatRoomRepository;
     private final UserRepository userRepository;
+    private final RedisTemplate<String, String> redisTemplate;
 
-    public ChatRoomService(ChatRoomRepository chatRoomRepository, UserRepository userRepository) {
+    public ChatRoomService(ChatRoomRepository chatRoomRepository, UserRepository userRepository, RedisTemplate<String, String> redisTemplate) {
         this.chatRoomRepository = chatRoomRepository;
         this.userRepository = userRepository;
+        this.redisTemplate = redisTemplate;
     }
 
     @Transactional(readOnly = true)
@@ -209,5 +213,26 @@ public class ChatRoomService {
         List<ChatRoom> rooms = chatRoomRepository.findDiscoverableRoomsForUser(user.getId());
         log.debug("Found {} discoverable rooms for user '{}'", rooms.size(), user.getUsername());
         return rooms;
+    }
+
+    @Transactional(readOnly = true)
+    public List<String> getOnlineMembers(Long roomId) {
+        log.debug("Fetching online members for room ID: {}", roomId);
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+
+        Set<User> members = room.getMembers();
+        if (members.isEmpty()) {
+            return List.of();
+        }
+
+        // Check Redis for online status of each member
+        List<String> onlineUsernames = members.stream()
+                .map(User::getUsername)
+                .filter(username -> Boolean.TRUE.equals(redisTemplate.hasKey("user:" + username + ":online")))
+                .toList();
+
+        log.debug("Found online members for room ID {}: {}", roomId, onlineUsernames);
+        return onlineUsernames;
     }
 }
