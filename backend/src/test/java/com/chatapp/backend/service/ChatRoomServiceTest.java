@@ -12,6 +12,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -35,6 +37,11 @@ class ChatRoomServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private RedisTemplate<String, String> redisTemplate;
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+
     @InjectMocks
     private ChatRoomService chatRoomService;
 
@@ -44,6 +51,8 @@ class ChatRoomServiceTest {
 
     @BeforeEach
     void setUp() {
+        reset(chatRoomRepository, userRepository, redisTemplate);
+
         testUser = new User();
         testUser.setId(1L);
         testUser.setUsername("testuser");
@@ -58,6 +67,9 @@ class ChatRoomServiceTest {
         testRoom.setName("Test Room");
         testRoom.setCreatedBy(testUser);
         testRoom.setMembers(new HashSet<>());
+
+        testRoom.getMembers().add(testUser);
+        testRoom.getMembers().add(anotherUser);
     }
 
     @Test
@@ -180,15 +192,24 @@ class ChatRoomServiceTest {
     void joinRoom_whenRoomAndUserExistAndNotMember_shouldAddUserToRoom() {
         Long roomId = testRoom.getId();
 
-        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+        ChatRoom roomFromRepo = new ChatRoom();
+        roomFromRepo.setId(roomId);
+        roomFromRepo.setName(testRoom.getName());
+        roomFromRepo.setMembers(new HashSet<>());
+
+
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(roomFromRepo));
         when(userRepository.findById(anotherUser.getId())).thenReturn(Optional.of(anotherUser));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(roomFromRepo.getMembers()).doesNotContain(anotherUser);
 
         chatRoomService.joinRoom(roomId, anotherUser);
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
         User savedUser = userCaptor.getValue();
+        assertThat(savedUser.getId()).isEqualTo(anotherUser.getId());
 
         assertThat(savedUser.getChatRooms()).as("Check if user's room set contains the joined room")
                 .anyMatch(room -> room.getId().equals(roomId));
@@ -358,5 +379,72 @@ class ChatRoomServiceTest {
 
         assertThat(actualRooms).isNotNull().isEmpty();
         verify(chatRoomRepository, never()).findDiscoverableRoomsForUser(anyLong());
+    }
+
+    // Tests for getOnlineMembers
+
+    @Test
+    void getOnlineMembers_whenRoomExists_shouldCheckRedisAndReturnOnlineUsernames() {
+        Long roomId = testRoom.getId();
+
+        assertThat(testRoom.getMembers()).hasSize(2);
+
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+
+        when(redisTemplate.hasKey("user:testuser:online")).thenReturn(true);
+        when(redisTemplate.hasKey("user:anotheruser:online")).thenReturn(false);
+
+        List<String> onlineMembers = chatRoomService.getOnlineMembers(roomId);
+
+        assertThat(onlineMembers)
+                .isNotNull()
+                .hasSize(1)
+                .containsExactly("testuser");
+
+        verify(chatRoomRepository).findById(roomId);
+        verify(redisTemplate).hasKey("user:testuser:online");
+        verify(redisTemplate).hasKey("user:anotheruser:online");
+    }
+
+    @Test
+    void getOnlineMembers_whenRoomHasNoMembers_shouldReturnEmptyList() {
+        Long roomId = testRoom.getId();
+        testRoom.getMembers().clear();
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+
+        List<String> onlineMembers = chatRoomService.getOnlineMembers(roomId);
+
+        assertThat(onlineMembers).isNotNull().isEmpty();
+        verify(chatRoomRepository).findById(roomId);
+        verify(redisTemplate, never()).hasKey(anyString());
+    }
+
+    @Test
+    void getOnlineMembers_whenNoMembersAreOnline_shouldReturnEmptyList() {
+        Long roomId = testRoom.getId();
+        assertThat(testRoom.getMembers()).hasSize(2);
+        when(chatRoomRepository.findById(roomId)).thenReturn(Optional.of(testRoom));
+
+        when(redisTemplate.hasKey("user:testuser:online")).thenReturn(false);
+        when(redisTemplate.hasKey("user:anotheruser:online")).thenReturn(false);
+
+        List<String> onlineMembers = chatRoomService.getOnlineMembers(roomId);
+
+        assertThat(onlineMembers).isNotNull().isEmpty();
+        verify(chatRoomRepository).findById(roomId);
+        verify(redisTemplate, times(2)).hasKey(anyString());
+    }
+
+    @Test
+    void getOnlineMembers_whenRoomNotFound_shouldThrowNotFoundException() {
+        Long nonExistentRoomId = 99L;
+        when(chatRoomRepository.findById(nonExistentRoomId)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            chatRoomService.getOnlineMembers(nonExistentRoomId);
+        });
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        verify(redisTemplate, never()).hasKey(anyString());
     }
 }
