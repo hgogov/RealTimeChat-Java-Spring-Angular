@@ -8,10 +8,12 @@ export interface ChatRoom {
     name: string;
     createdByUsername?: string;
     createdAt: string;
+    isPublic: boolean;
 }
 
 export interface CreateRoomPayload {
     name: string;
+    isPublic: boolean;
 }
 
 @Injectable({
@@ -27,6 +29,7 @@ export class ChatRoomService {
   }
 
   createRoom(payload: CreateRoomPayload): Observable<ChatRoom> {
+    console.log('Service sending payload:', payload);
     return this.http.post<ChatRoom>(this.apiUrl, payload);
   }
 

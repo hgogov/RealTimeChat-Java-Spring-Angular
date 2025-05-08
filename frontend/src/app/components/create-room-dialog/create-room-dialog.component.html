@@ -20,6 +20,15 @@
         Name cannot exceed 100 characters.
       </mat-error>
     </mat-form-field>
+
+    <!-- Private room Toggle -->
+    <mat-slide-toggle formControlName="isPublic" color="primary">
+      {{ roomForm.get('isPublic')?.value ? 'Public (Discoverable)' : 'Private (Invite Only)' }}
+    </mat-slide-toggle>
+    <mat-hint align="start" style="font-size: 0.75em; margin-top: -10px; margin-bottom: 10px;">
+      Public rooms can be joined by anyone. Private rooms require an invitation.
+    </mat-hint>
+
   </form>
 </div>
 

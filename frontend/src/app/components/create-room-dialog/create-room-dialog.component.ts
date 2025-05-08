@@ -6,6 +6,8 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ChatRoomService, CreateRoomPayload, ChatRoom } from '../../services/chat-room.service';
 
@@ -45,7 +47,9 @@ export function trimmedRequiredMinLengthValidator(minLength: number): ValidatorF
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    MatSlideToggleModule,
+    MatTooltipModule
   ],
   templateUrl: './create-room-dialog.component.html',
   styleUrls: ['./create-room-dialog.component.scss']
@@ -61,7 +65,8 @@ export class CreateRoomDialogComponent implements OnInit {
     private snackBar: MatSnackBar
   ) {
     this.roomForm = this.fb.group({
-      name: ['', [Validators.required, Validators.maxLength(100), trimmedRequiredMinLengthValidator(3)]]
+      name: ['', [Validators.required, Validators.maxLength(100), trimmedRequiredMinLengthValidator(3)]],
+      isPublic: [true]
     });
   }
 
@@ -73,19 +78,22 @@ export class CreateRoomDialogComponent implements OnInit {
   }
 
   onSubmit(): void {
+    console.log('Form Value on Submit:', this.roomForm.value);
     if (this.roomForm.invalid || this.isSubmitting) {
       return;
     }
 
     this.isSubmitting = true;
     const roomPayload: CreateRoomPayload = {
-      name: this.roomForm.value.name.trim()
+      name: this.roomForm.value.name.trim(),
+      isPublic: this.roomForm.value.isPublic
     };
+    console.log('Payload to send:', roomPayload);
 
     this.chatRoomService.createRoom(roomPayload).subscribe({
       next: (createdRoom: ChatRoom) => {
         this.isSubmitting = false;
-        this.snackBar.open(`Room "${createdRoom.name}" created successfully!`, 'Close', { duration: 3000 });
+        this.snackBar.open(`Room "${createdRoom.name}" created! (${createdRoom.isPublic ? 'Public' : 'Private'})`, 'Close', { duration: 3000 });
         this.dialogRef.close({ roomCreated: true, newRoom: createdRoom });
       },
       error: (err: any) => {
