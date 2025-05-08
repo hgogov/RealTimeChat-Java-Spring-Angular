@@ -4,6 +4,7 @@ import com.chatapp.backend.config.TestControllerConfiguration;
 import com.chatapp.backend.model.ChatRoom;
 import com.chatapp.backend.model.User;
 import com.chatapp.backend.model.dto.CreateChatRoomRequest;
+import com.chatapp.backend.repository.ChatRoomRepository;
 import com.chatapp.backend.repository.UserRepository;
 import com.chatapp.backend.service.ChatRoomService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -53,13 +55,19 @@ class ChatRoomControllerTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private ChatRoomRepository chatRoomRepository;
+
+    @Autowired
+    private RedisTemplate<String, String> redisTemplate;
+
     private User mockUser;
     private ChatRoom room1;
     private ChatRoom room2;
 
     @BeforeEach
     void setUp() {
-        Mockito.reset(chatRoomService, userRepository);
+        Mockito.reset(chatRoomService, userRepository, redisTemplate);
 
         mockUser = new User();
         mockUser.setId(1L);
@@ -70,6 +78,12 @@ class ChatRoomControllerTest {
 
         given(userRepository.findByUsername(anyString())).willReturn(Optional.of(mockUser));
         given(userRepository.findByUsername("mockUser")).willReturn(Optional.of(mockUser));
+
+        given(chatRoomService.isUserMemberOfRoom("mockUser", "Room 1")).willReturn(true);
+        given(chatRoomService.isUserMemberOfRoom("mockUser", null)).willReturn(false);
+
+        given(chatRoomRepository.findById(room1.getId())).willReturn(Optional.of(room1));
+        given(chatRoomRepository.findById(99L)).willReturn(Optional.empty());
     }
 
     @Test
@@ -374,5 +388,94 @@ class ChatRoomControllerTest {
         }
 
         verify(chatRoomService, never()).findDiscoverableRooms(any(User.class));
+    }
+
+    // Tests for GET /{roomId}/presence
+
+    @Test
+    @WithMockUser(username = "mockUser")
+    void getRoomOnlineMembers_whenAuthenticatedAndMember_shouldReturnOnlineList() throws Exception {
+        Long roomId = room1.getId();
+        List<String> onlineMembers = List.of("mockUser", "onlineFriend");
+
+        given(chatRoomService.getOnlineMembers(roomId)).willReturn(onlineMembers);
+
+        ResultActions response = mockMvc.perform(get("/api/rooms/{roomId}/presence", roomId)
+                .accept(MediaType.APPLICATION_JSON));
+
+        try {
+            response.andExpect(status().isOk())
+                    .andExpect(jsonPath("$", hasSize(2)))
+                    .andExpect(jsonPath("$[0]", is("mockUser")))
+                    .andExpect(jsonPath("$[1]", is("onlineFriend")));
+        } catch (AssertionError e) {
+            response.andDo(print());
+            throw e;
+        }
+
+        verify(chatRoomService).isUserMemberOfRoom("mockUser", "Room 1");
+        verify(chatRoomService).getOnlineMembers(roomId);
+    }
+
+    @Test
+    @WithMockUser(username = "mockUser")
+    void getRoomOnlineMembers_whenRoomNotFound_shouldReturnNotFound() throws Exception {
+        Long nonExistentRoomId = 99L;
+        ResultActions response = mockMvc.perform(get("/api/rooms/{roomId}/presence", nonExistentRoomId)
+                .accept(MediaType.APPLICATION_JSON));
+
+        try {
+            response.andExpect(status().isForbidden());
+        } catch (AssertionError e) {
+            response.andDo(print());
+            throw e;
+        }
+
+        verify(chatRoomService, never()).getOnlineMembers(anyLong());
+    }
+
+    @Test
+    @WithMockUser(username = "stranger")
+        // Use a different user for this test
+    void getRoomOnlineMembers_whenNotMember_shouldReturnForbidden() throws Exception {
+        Long roomId = room1.getId();
+        User strangerUser = new User();
+        strangerUser.setId(99L);
+        strangerUser.setUsername("stranger");
+
+        given(userRepository.findByUsername("stranger")).willReturn(Optional.of(strangerUser));
+        given(chatRoomService.isUserMemberOfRoom("stranger", "Room 1")).willReturn(false);
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(room1));
+
+
+        ResultActions response = mockMvc.perform(get("/api/rooms/{roomId}/presence", roomId)
+                .accept(MediaType.APPLICATION_JSON));
+
+        try {
+            response.andExpect(status().isForbidden());
+        } catch (AssertionError e) {
+            response.andDo(print());
+            throw e;
+        }
+
+        verify(chatRoomService).isUserMemberOfRoom("stranger", "Room 1");
+        verify(chatRoomService, never()).getOnlineMembers(anyLong());
+    }
+
+    @Test
+    void getRoomOnlineMembers_whenNotAuthenticated_shouldReturnForbidden() throws Exception {
+        Long roomId = room1.getId();
+
+        ResultActions response = mockMvc.perform(get("/api/rooms/{roomId}/presence", roomId)
+                .accept(MediaType.APPLICATION_JSON));
+
+        try {
+            response.andExpect(status().isForbidden());
+        } catch (AssertionError e) {
+            response.andDo(print());
+            throw e;
+        }
+
+        verify(chatRoomService, never()).getOnlineMembers(anyLong());
     }
 }

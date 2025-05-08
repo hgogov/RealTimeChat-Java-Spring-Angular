@@ -10,9 +10,13 @@ import org.mockito.Mockito;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
+import static org.mockito.ArgumentMatchers.anyString;
 
 @TestConfiguration
 public class TestControllerConfiguration {
@@ -64,6 +68,23 @@ public class TestControllerConfiguration {
     public ChatRoomRepository mockChatRoomRepository() {
         System.out.println("--- Providing Mock ChatRoomRepository via TestConfig ---");
         return Mockito.mock(ChatRoomRepository.class);
+    }
+
+    @Bean
+    @Primary
+    @SuppressWarnings("unchecked")
+    public RedisTemplate<String, String> mockRedisTemplate() {
+        System.out.println("--- Providing Mock RedisTemplate via TestConfig ---");
+        RedisTemplate<String, String> redisTemplateMock = Mockito.mock(RedisTemplate.class);
+
+        ValueOperations<String, String> valueOperationsMock = Mockito.mock(ValueOperations.class);
+        Mockito.when(redisTemplateMock.opsForValue()).thenReturn(valueOperationsMock);
+
+        Mockito.when(redisTemplateMock.hasKey(anyString())).thenReturn(false);
+
+        Mockito.when(redisTemplateMock.delete(anyString())).thenReturn(true);
+
+        return redisTemplateMock;
     }
 
     @Bean
