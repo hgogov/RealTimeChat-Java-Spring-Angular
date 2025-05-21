@@ -5,6 +5,7 @@ import com.chatapp.backend.repository.MessageRepository;
 import com.chatapp.backend.repository.UserRepository;
 import com.chatapp.backend.service.ChatRoomService;
 import com.chatapp.backend.service.CustomUserDetailsService;
+import com.chatapp.backend.service.RoomInvitationService;
 import com.chatapp.backend.utils.JwtUtils;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -99,5 +100,12 @@ public class TestControllerConfiguration {
     public SimpMessagingTemplate mockSimpMessagingTemplate() {
         System.out.println("--- Providing Mock SimpMessagingTemplate via TestConfig ---");
         return Mockito.mock(SimpMessagingTemplate.class);
+    }
+
+    @Bean
+    @Primary
+    public RoomInvitationService mockRoomInvitationService() {
+        System.out.println("--- Providing Mock RoomInvitationService via TestConfig ---");
+        return Mockito.mock(RoomInvitationService.class);
     }
 }

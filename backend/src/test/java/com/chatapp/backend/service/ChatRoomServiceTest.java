@@ -189,7 +189,7 @@ class ChatRoomServiceTest {
 
     // Tests for joinRoom
     @Test
-    void joinRoom_whenRoomAndUserExistAndNotMember_shouldAddUserToRoom() {
+    void joinRoom_whenRoomAndUserExistAndNotMember_shouldAcceptRoomInvitationAndAddUser() {
         Long roomId = testRoom.getId();
 
         ChatRoom roomFromRepo = new ChatRoom();

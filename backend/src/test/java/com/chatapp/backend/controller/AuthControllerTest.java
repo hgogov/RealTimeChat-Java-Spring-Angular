@@ -98,7 +98,6 @@ class AuthControllerTest {
     @Test
     void register_whenValidUser_shouldReturnOkAndSaveUser() throws Exception {
         given(passwordEncoder.encode(registrationUser.getPassword())).willReturn("encodedPassword");
-
         given(userRepository.saveAndFlush(any(User.class))).willReturn(savedUser);
 
         given(chatRoomRepository.findByName(DataInitializer.GENERAL_ROOM_NAME))
@@ -106,8 +105,6 @@ class AuthControllerTest {
 
         given(userRepository.findById(savedUser.getId()))
                 .willReturn(Optional.of(savedUser));
-
-        doNothing().when(chatRoomService).addUserToRoom(eq(generalRoom.getId()), any(User.class));
 
 
         ResultActions response = mockMvc.perform(post("/api/auth/register")
@@ -128,10 +125,13 @@ class AuthControllerTest {
         verify(chatRoomRepository, times(1)).findByName(DataInitializer.GENERAL_ROOM_NAME);
         verify(userRepository, times(1)).findById(savedUser.getId());
 
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        ArgumentCaptor<User> userToSaveCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository, times(1)).save(userToSaveCaptor.capture());
 
-        verify(chatRoomService, times(1)).addUserToRoom(eq(generalRoom.getId()), userCaptor.capture());
-        assertThat(userCaptor.getValue().getId()).isEqualTo(savedUser.getId());
+        User userSavedWithRoom = userToSaveCaptor.getValue();
+        assertThat(userSavedWithRoom.getId()).isEqualTo(savedUser.getId());
+        assertThat(userSavedWithRoom.getChatRooms()).as("User should be added to General room")
+                .contains(generalRoom);
     }
 
 }

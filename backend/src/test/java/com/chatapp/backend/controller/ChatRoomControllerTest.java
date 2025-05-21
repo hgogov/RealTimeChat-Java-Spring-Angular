@@ -436,7 +436,6 @@ class ChatRoomControllerTest {
 
     @Test
     @WithMockUser(username = "stranger")
-        // Use a different user for this test
     void getRoomOnlineMembers_whenNotMember_shouldReturnForbidden() throws Exception {
         Long roomId = room1.getId();
         User strangerUser = new User();
