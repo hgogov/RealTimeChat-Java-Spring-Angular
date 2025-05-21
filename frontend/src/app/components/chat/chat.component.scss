@@ -214,15 +214,19 @@
 }
 
 .room-actions {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-
-    .action-button {
-        flex: 1;
-        font-size: 0.9em;
-        mat-icon { margin-right: 4px; }
+  display: flex;
+  gap: 8px;
+  .action-button {
+    flex: 1;
+    font-size: 0.85em;
+    height: 36px;
+    mat-icon {
+      margin-right: 6px;
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
     }
+  }
 }
 
 .room-list-item.general-room {
@@ -399,4 +403,197 @@
 .message-input {
   flex-grow: 1;
   margin-right: 10px;
+}
+
+/* Invitation Section*/
+
+.sidebar-divider {
+  margin: 12px 0;
+  border-top-color: rgba(0,0,0,0.08);
+}
+
+.invitations-section {
+  padding-top: 8px;
+}
+
+.invitations-section h3 {
+  display: flex;
+  align-items: center;
+  margin: 0 0 10px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #333;
+  position: relative;
+}
+
+.invitations-section h3 .toggle-button {
+  margin-right: 8px;
+  margin-left: -6px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: normal;
+  color: #555;
+}
+
+.invitations-section h3 .toggle-button mat-icon {
+  font-size: 22px;
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+}
+
+.invitations-section .invitation-badge {
+  margin-left: 8px;
+  vertical-align: text-top;
+}
+
+.invitations-panel {
+  box-shadow: none !important;
+  background-color: transparent !important;
+  border-radius: 4px;
+}
+
+.invitations-panel .mat-expansion-panel-header {
+  padding: 0 0 0 4px !important;
+  height: auto !important;
+  min-height: 36px !important;
+  border-radius: 4px;
+}
+
+.invitations-panel .mat-expansion-panel-header:hover {
+  background-color: rgba(0,0,0,0.03);
+}
+
+.invitations-panel .mat-expansion-panel-content .mat-expansion-panel-body {
+  padding: 0 !important;
+}
+
+.no-invites-message {
+  color: #757575;
+  font-style: italic;
+  padding: 12px 16px;
+  font-size: 0.9em;
+  text-align: center;
+  background-color: #f9f9f9;
+  border-radius: 6px;
+}
+
+.invitation-list-wrapper {
+}
+
+.invitation-item-div {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  min-height: 60px;
+  background-color: #fff;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.invitation-item-div:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.invitation-item-div:hover {
+  background-color: #f9f9f9;
+}
+
+.invitation-item-div .invite-icon-column {
+  flex-shrink: 0;
+  margin-right: 12px;
+  padding-top: 2px;
+  color: #3f51b5;
+  display: flex;
+  align-items: center;
+}
+
+.invitation-item-div .invite-icon-column mat-icon {
+  font-size: 24px;
+  width: 24px;
+  height: 24px;
+}
+
+.invitation-item-div .invite-main-content-column {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 40px;
+  margin-right: 8px;
+  overflow: hidden;
+}
+
+.invitation-item-div .invite-details-text {
+  margin-bottom: 8px;
+}
+
+.invitation-item-div .invite-details-text .invite-text-line1,
+.invitation-item-div .invite-details-text .invite-text-line2 {
+  font-size: 0.9em;
+  line-height: 1.4;
+  color: #424242;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.invitation-item-div .invite-details-text .invite-text-line1 {
+    margin-bottom: 2px;
+}
+
+.invitation-item-div .invite-details-text .invite-text-line1 strong {
+  font-weight: 500;
+  color: #212121;
+}
+
+.invitation-item-div .invite-details-text .invite-text-line2 em {
+  color: #616161;
+  font-size: 0.9em;
+}
+
+.invitation-item-div .invite-actions-column {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.invitation-item-div .invite-actions-column button.mat-mdc-icon-button {
+  width: 38px;
+  height: 38px;
+  line-height: 38px;
+}
+
+.invitation-item-div .invite-actions-column button.mat-mdc-icon-button .mat-icon {
+  font-size: 22px;
+  width: 22px;
+  height: 22px;
+}
+
+.invitation-item-div .invite-actions-column button.mat-mdc-icon-button + button.mat-mdc-icon-button {
+  margin-left: 6px;
+}
+
+.room-actions-section {
+   padding-bottom: 8px;
+
+   h3 {
+     display: flex;
+     align-items: center;
+     margin: 0 0 12px 0;
+     padding-bottom: 8px;
+     border-bottom: 1px solid #eee;
+     font-size: 0.9rem;
+     font-weight: 500;
+     color: #444;
+   }
 }

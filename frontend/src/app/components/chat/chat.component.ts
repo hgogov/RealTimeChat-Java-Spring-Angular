@@ -18,6 +18,8 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatBadgeModule } from '@angular/material/badge';
+import { MatExpansionModule } from '@angular/material/expansion';
 
 // App Services and Interfaces
 import { WebsocketService, ChatMessage, PresenceEvent, TypingEvent } from '../../services/websocket.service';
@@ -27,6 +29,9 @@ import { ChatRoomService, ChatRoom } from '../../services/chat-room.service';
 import { PresenceService } from '../../services/presence.service';
 import { CreateRoomDialogComponent } from '../create-room-dialog/create-room-dialog.component';
 import { JoinRoomDialogComponent } from '../join-room-dialog/join-room-dialog.component';
+import { InviteUserDialogComponent, InviteUserDialogData } from '../invite-user-dialog/invite-user-dialog.component';
+import { RoomInvitationService, RoomInvitation } from '../../services/room-invitation.service';
+import { InvitationNotification } from '../../services/websocket.service';
 
 // App Pipes
 import { FilterCurrentUserPipe } from '../../pipes/filter-current-user.pipe';
@@ -52,6 +57,8 @@ import { FilterCurrentUserPipe } from '../../pipes/filter-current-user.pipe';
     MatDialogModule,
     MatTooltipModule,
     MatProgressSpinnerModule,
+    MatBadgeModule,
+    MatExpansionModule
   ],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss']
@@ -64,6 +71,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   isSomeoneTyping = false;
   typingUsername = '';
   availableRooms: ChatRoom[] = [];
+  pendingInvitations: RoomInvitation[] = [];
+  hasUnreadInvitations = false;
 
   @ViewChild('messagesContainer') private messagesContainer!: ElementRef;
   private shouldScrollToBottom = true;
@@ -82,7 +91,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   private presenceService = inject(PresenceService);
 
 
-  constructor() {
+  constructor(private roomInvitationService: RoomInvitationService) {
     this.messageForm = this.fb.group({
       content: ['']
     });
@@ -94,6 +103,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.setupRoomSubscription();
     this.setupMessageSubscription();
     this.loadUserRooms();
+    this.setupInvitationNotificationSubscription();
+    this.loadPendingInvitations();
   }
 
   ngOnDestroy(): void {
@@ -103,6 +114,78 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       clearTimeout(this.typingTimeout);
     }
   }
+
+  // --- Invitation Handling Logic ---
+  private setupInvitationNotificationSubscription(): void {
+      this.websocketService.invitationNotification$
+          .pipe(takeUntil(this.destroy$))
+          .subscribe((notification: InvitationNotification) => {
+              console.log('[ChatComponent] Received invitation notification:', notification);
+              if (notification.type === 'NEW_INVITATION') {
+                  this.snackBar.open(`You have a new invitation to join room: ${notification.roomName}!`, 'View', { duration: 7000 })
+                      .onAction().subscribe(() => {
+                          console.log('View invitations action clicked');
+                      });
+                  this.hasUnreadInvitations = true;
+                  this.loadPendingInvitations();
+              }
+          });
+  }
+
+  loadPendingInvitations(): void {
+      console.log('[ChatComponent] Loading pending invitations...');
+      this.roomInvitationService.getPendingInvitations()
+          .pipe(takeUntil(this.destroy$))
+          .subscribe({
+              next: (invites) => {
+                  this.pendingInvitations = invites;
+                  this.hasUnreadInvitations = invites.length > 0;
+                  console.log('[ChatComponent] Pending invitations loaded:', this.pendingInvitations);
+                  this.cdRef.detectChanges();
+              },
+              error: (err) => {
+                  console.error('[ChatComponent] Error loading pending invitations:', err);
+                  this.snackBar.open('Failed to load your invitations.', 'Close', { duration: 3000 });
+              }
+          });
+  }
+
+  acceptInvitation(invitation: RoomInvitation): void {
+      console.log('[ChatComponent] Accepting invitation:', invitation);
+      this.roomInvitationService.acceptInvitation(invitation.id)
+          .pipe(takeUntil(this.destroy$))
+          .subscribe({
+              next: () => {
+                  this.snackBar.open(`You joined room "${invitation.roomName}"!`, 'OK', { duration: 3000 });
+                  this.loadPendingInvitations();
+                  this.loadUserRooms();
+                  timer(100).pipe(takeUntil(this.destroy$)).subscribe(() => {
+                      this.selectRoom(invitation.roomName);
+                  });
+              },
+              error: (err) => {
+                  console.error('[ChatComponent] Error accepting invitation:', err);
+                  this.snackBar.open(err?.error?.message || 'Failed to accept invitation.', 'Close', { duration: 4000 });
+              }
+          });
+  }
+
+  declineInvitation(invitation: RoomInvitation): void {
+      console.log('[ChatComponent] Declining invitation:', invitation);
+      this.roomInvitationService.declineInvitation(invitation.id)
+          .pipe(takeUntil(this.destroy$))
+          .subscribe({
+              next: () => {
+                  this.snackBar.open(`Invitation to "${invitation.roomName}" declined.`, 'OK', { duration: 3000 });
+                  this.loadPendingInvitations();
+              },
+              error: (err) => {
+                  console.error('[ChatComponent] Error declining invitation:', err);
+                  this.snackBar.open(err?.error?.message || 'Failed to decline invitation.', 'Close', { duration: 4000 });
+              }
+          });
+  }
+
 
   // --- Setup Methods ---
 
@@ -372,6 +455,22 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
                      console.error(`[ChatComponent] Error leaving room ${roomId}:`, err);
                      const errorMsg = err?.error?.message || 'Failed to leave room.';
                      this.snackBar.open(errorMsg, 'Close', { duration: 4000 });
+                }
+            });
+    }
+
+    openInviteUserDialog(roomId: number, roomName: string): void {
+        const dialogRef = this.dialog.open<InviteUserDialogComponent, InviteUserDialogData>(
+            InviteUserDialogComponent, {
+            width: '400px',
+            data: { roomId, roomName }
+        });
+
+        dialogRef.afterClosed()
+            .pipe(takeUntil(this.destroy$))
+            .subscribe(result => {
+                if (result?.invited) {
+                    console.log(`Invitation process completed for room '${roomName}'.`);
                 }
             });
     }

@@ -1,0 +1,30 @@
+<h1 mat-dialog-title>Invite User to "{{ data.roomName }}"</h1>
+
+<div mat-dialog-content>
+  <p>Enter the username of the user you want to invite.</p>
+  <form [formGroup]="inviteForm" (ngSubmit)="onSubmit()" id="invite-user-form">
+    <mat-form-field appearance="outline" style="width: 100%;">
+      <mat-label>Username to Invite</mat-label>
+      <input matInput formControlName="username" required minlength="3" cdkFocusInitial>
+      <mat-error *ngIf="inviteForm.get('username')?.hasError('required')">
+        Username is required.
+      </mat-error>
+      <mat-error *ngIf="inviteForm.get('username')?.hasError('minlength')">
+        Username must be at least 3 characters.
+      </mat-error>
+    </mat-form-field>
+  </form>
+
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-button (click)="onCancelClick()" [disabled]="isSubmitting">Cancel</button>
+  <button mat-raised-button
+          color="primary"
+          type="submit"
+          form="invite-user-form"
+          [disabled]="inviteForm.invalid || isSubmitting">
+    <span *ngIf="!isSubmitting">Send Invite</span>
+    <mat-spinner *ngIf="isSubmitting" diameter="20" style="margin: 0 8px;"></mat-spinner>
+  </button>
+</div>
