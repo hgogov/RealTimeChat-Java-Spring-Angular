@@ -4,6 +4,7 @@ import com.chatapp.backend.model.ChatRoom;
 import com.chatapp.backend.model.User;
 import com.chatapp.backend.model.dto.ChatRoomDto;
 import com.chatapp.backend.model.dto.CreateChatRoomRequest;
+import com.chatapp.backend.model.dto.InviteUserRequest;
 import com.chatapp.backend.repository.ChatRoomRepository;
 import com.chatapp.backend.repository.UserRepository;
 import com.chatapp.backend.service.ChatRoomService;
@@ -195,6 +196,40 @@ public class ChatRoomController {
         } catch (Exception e) {
             log.error("Unexpected error fetching presence for room {} for user '{}'", roomId, currentUser.getUsername(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    @PostMapping("/{roomId}/invites")
+    @Operation(summary = "Invite a registered user to join a chat room",
+            description = "The inviting user must be a member of the room. The invited user must exist and not already be a member.")
+    @ApiResponse(responseCode = "200", description = "User invitation process initiated successfully")
+    @ApiResponse(responseCode = "400", description = "Invalid request (e.g., self-invite, user already member, pending invite exists)")
+    @ApiResponse(responseCode = "401", description = "Inviting user not authenticated")
+    @ApiResponse(responseCode = "403", description = "Inviting user is not a member of the room or trying to invite to a room they cannot access")
+    @ApiResponse(responseCode = "404", description = "Room or User to invite not found")
+    public ResponseEntity<Void> inviteUserToRoom(
+            @Parameter(description = "ID of the room to invite to", required = true) @PathVariable Long roomId,
+            @Valid @org.springframework.web.bind.annotation.RequestBody
+            InviteUserRequest inviteRequest) {
+
+        User invitingUser = getCurrentUser();
+        String usernameToInvite = inviteRequest.getUsername();
+
+        log.info("Controller: Received request from user '{}' to invite user '{}' to room ID: {}",
+                invitingUser.getUsername(), usernameToInvite, roomId);
+        try {
+            chatRoomService.inviteUserToRoom(roomId, usernameToInvite, invitingUser);
+
+            log.info("Controller: Invite request for user '{}' to room {} processed successfully by service.", usernameToInvite, roomId);
+            return ResponseEntity.ok().build();
+        } catch (ResponseStatusException e) {
+            log.warn("Controller: Failed to invite user '{}' to room {}: Status={}, Reason={}",
+                    usernameToInvite, roomId, e.getStatusCode(), e.getReason());
+            return ResponseEntity.status(e.getStatusCode()).build();
+        } catch (Exception e) {
+            log.error("Controller: Unexpected error inviting user '{}' to room {} by user '{}'",
+                    usernameToInvite, roomId, invitingUser.getUsername(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 }
