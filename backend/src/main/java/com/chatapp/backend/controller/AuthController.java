@@ -80,11 +80,12 @@ public class AuthController {
                     });
 
             User managedSavedUser = userRepository.findById(savedUser.getId()).orElseThrow(() ->
-                    new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Cannot find newly saved user")
+                    new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Cannot find newly saved user to join General room")
             );
-            chatRoomService.addUserToRoom(generalRoom.getId(), managedSavedUser);
+            managedSavedUser.getChatRooms().add(generalRoom);
+            userRepository.save(managedSavedUser);
 
-            log.info("User '{}' automatically processed for '{}' room membership.", savedUser.getUsername(), DataInitializer.GENERAL_ROOM_NAME);
+            log.info("User '{}' automatically joined '{}' room.", savedUser.getUsername(), DataInitializer.GENERAL_ROOM_NAME);
 
             return ResponseEntity.ok("User registered!");
 
@@ -92,7 +93,7 @@ public class AuthController {
             log.warn("Registration failed for user '{}': {}", user.getUsername(), e.getReason());
             return ResponseEntity.status(e.getStatusCode()).body(e.getReason());
         } catch (DataIntegrityViolationException e) {
-            log.warn("Registration failed for user '{}' due to data integrity violation (e.g., duplicate username/email).", user.getUsername());
+            log.warn("Registration failed for user '{}' due to data integrity violation.", user.getUsername());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Username or Email already exists.");
         } catch (Exception e) {
             log.error("Unexpected error during registration for user '{}'", user.getUsername(), e);

@@ -2,19 +2,24 @@ package com.chatapp.backend.service;
 
 import com.chatapp.backend.config.DataInitializer;
 import com.chatapp.backend.model.ChatRoom;
+import com.chatapp.backend.model.InvitationStatus;
+import com.chatapp.backend.model.RoomInvitation;
 import com.chatapp.backend.model.User;
 import com.chatapp.backend.model.dto.CreateChatRoomRequest;
 import com.chatapp.backend.repository.ChatRoomRepository;
+import com.chatapp.backend.repository.RoomInvitationRepository;
 import com.chatapp.backend.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -27,10 +32,15 @@ public class ChatRoomService {
     private final UserRepository userRepository;
     private final RedisTemplate<String, String> redisTemplate;
 
-    public ChatRoomService(ChatRoomRepository chatRoomRepository, UserRepository userRepository, RedisTemplate<String, String> redisTemplate) {
+    private final RoomInvitationRepository roomInvitationRepository;
+    private final SimpMessagingTemplate messagingTemplate;
+
+    public ChatRoomService(ChatRoomRepository chatRoomRepository, UserRepository userRepository, RedisTemplate<String, String> redisTemplate, RoomInvitationRepository roomInvitationRepository, SimpMessagingTemplate messagingTemplate) {
         this.chatRoomRepository = chatRoomRepository;
         this.userRepository = userRepository;
         this.redisTemplate = redisTemplate;
+        this.roomInvitationRepository = roomInvitationRepository;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @Transactional(readOnly = true)
@@ -87,56 +97,6 @@ public class ChatRoomService {
         List<ChatRoom> rooms = chatRoomRepository.findChatRoomsByUserId(user.getId());
         log.debug("Found {} rooms for user '{}'", rooms.size(), user.getUsername());
         return rooms;
-    }
-
-    @Transactional
-    public void addUserToRoom(Long roomId, User userToAdd) {
-        log.info("Attempting to add user '{}' (ID: {}) to room ID {}", userToAdd.getUsername(), userToAdd.getId(), roomId);
-        ChatRoom room = chatRoomRepository.findById(roomId)
-                .orElseThrow(() -> {
-                    log.warn("Add user failed: Room ID {} not found.", roomId);
-                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found");
-                });
-        User managedUser = userRepository.findById(userToAdd.getId())
-                .orElseThrow(() -> {
-                    log.warn("Add user failed: User ID {} not found.", userToAdd.getId());
-                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-                });
-
-        if (room.getMembers().contains(managedUser)) {
-            log.warn("User '{}' is already a member of room '{}'. No add action needed.", managedUser.getUsername(), room.getName());
-            return;
-        }
-
-        managedUser.getChatRooms().add(room);
-        userRepository.save(managedUser);
-
-        log.info("Successfully added user '{}' to room '{}' (ID: {})", managedUser.getUsername(), room.getName(), room.getId());
-    }
-
-    @Transactional
-    public void removeUserFromRoom(Long roomId, User userToRemove) {
-        log.info("Attempting to remove user '{}' from room ID {}", userToRemove.getUsername(), roomId);
-        ChatRoom room = chatRoomRepository.findById(roomId)
-                .orElseThrow(() -> {
-                    log.warn("Leave room failed: Room ID {} not found.", roomId);
-                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found");
-                });
-        User user = userRepository.findById(userToRemove.getId())
-                .orElseThrow(() -> {
-                    log.warn("Leave room failed: User ID {} not found.", userToRemove.getId());
-                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-                });
-
-
-        if (!room.getMembers().contains(user)) {
-            log.warn("User '{}' is not a member of room '{}'. Cannot remove.", user.getUsername(), room.getName());
-            return;
-        }
-
-        room.getMembers().remove(user);
-        chatRoomRepository.save(room);
-        log.info("Successfully removed user '{}' from room '{}'", user.getUsername(), room.getName());
     }
 
     @Transactional
@@ -234,5 +194,124 @@ public class ChatRoomService {
 
         log.debug("Found online members for room ID {}: {}", roomId, onlineUsernames);
         return onlineUsernames;
+    }
+
+    @Transactional
+    public void inviteUserToRoom(Long roomId, String usernameToInvite, User invitingUser) {
+        log.info("User '{}' attempting to invite user '{}' to room ID: {}",
+                invitingUser.getUsername(), usernameToInvite, roomId);
+
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+
+        if (!userRepository.existsByUsernameAndChatRooms_Id(invitingUser.getUsername(), roomId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You must be a member of the room to invite others.");
+        }
+        log.debug("Invite check: Inviting user '{}' confirmed member of room '{}'", invitingUser.getUsername(), room.getName());
+
+        User userToInvite = userRepository.findByUsername(usernameToInvite)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User '" + usernameToInvite + "' not found."));
+
+        if (invitingUser.getId().equals(userToInvite.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot invite yourself.");
+        }
+
+        User managedInvitingUser = userRepository.findById(invitingUser.getId()).orElseThrow();
+        User managedUserToInvite = userRepository.findById(userToInvite.getId()).orElseThrow();
+        ChatRoom managedRoom = chatRoomRepository.findById(roomId).orElseThrow();
+
+        if (managedRoom.getMembers().contains(managedUserToInvite)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User '" + usernameToInvite + "' is already in the room.");
+        }
+
+        if (roomInvitationRepository.existsByRoomAndInvitedUserAndStatus(managedRoom, managedUserToInvite, InvitationStatus.PENDING)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User '" + usernameToInvite + "' already has a pending invitation to this room.");
+        }
+
+        RoomInvitation invitation = RoomInvitation.builder()
+                .room(managedRoom)
+                .invitedUser(managedUserToInvite)
+                .invitingUser(managedInvitingUser)
+                .status(InvitationStatus.PENDING)
+                .build();
+        roomInvitationRepository.save(invitation);
+
+        log.info("Invitation created for user '{}' to join room '{}' by user '{}'. ID: {}",
+                usernameToInvite, room.getName(), invitingUser.getUsername(), invitation.getId());
+
+        Map<String, Object> notificationPayload = Map.of(
+                "type", "NEW_INVITATION",
+                "invitationId", invitation.getId(),
+                "roomId", room.getId(),
+                "roomName", room.getName(),
+                "inviterUsername", invitingUser.getUsername()
+        );
+
+        messagingTemplate.convertAndSendToUser(
+                managedUserToInvite.getUsername(),
+                "/queue/invitations",
+                notificationPayload
+        );
+        log.info("Sent NEW_INVITATION notification to user '{}' for room '{}'", managedUserToInvite.getUsername(), room.getName());
+    }
+
+
+    @Transactional
+    public void acceptRoomInvitationAndAddUser(Long invitationId, User userAccepting) {
+        log.info("User '{}' attempting to accept invitation ID: {}", userAccepting.getUsername(), invitationId);
+
+        RoomInvitation invitation = roomInvitationRepository.findById(invitationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invitation not found."));
+
+        if (invitation.getStatus() != InvitationStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invitation is no longer pending (status: " + invitation.getStatus() + ").");
+        }
+
+        ChatRoom room = invitation.getRoom();
+        User managedUserAccepting = userRepository.findById(userAccepting.getId()).orElseThrow();
+
+        if (!room.getMembers().contains(managedUserAccepting)) {
+            managedUserAccepting.getChatRooms().add(room);
+            userRepository.save(managedUserAccepting);
+            log.info("User '{}' added to room '{}' members after accepting invitation.", managedUserAccepting.getUsername(), room.getName());
+        } else {
+            log.warn("User '{}' was already a member of room '{}' upon accepting invite.", managedUserAccepting.getUsername(), room.getName());
+        }
+
+
+        invitation.setStatus(InvitationStatus.ACCEPTED);
+        roomInvitationRepository.save(invitation);
+        log.info("Invitation ID {} status updated to ACCEPTED for user '{}'", invitationId, userAccepting.getUsername());
+
+        User invitingUser = invitation.getInvitingUser();
+        if (invitingUser != null) {
+            Map<String, Object> acceptNotification = Map.of(
+                    "type", "INVITATION_ACCEPTED",
+                    "roomId", room.getId(),
+                    "roomName", room.getName(),
+                    "acceptedByUsername", userAccepting.getUsername()
+            );
+            messagingTemplate.convertAndSendToUser(
+                    invitingUser.getUsername(),
+                    "/queue/notifications",
+                    acceptNotification
+            );
+            log.info("Sent INVITATION_ACCEPTED notification to inviter '{}'", invitingUser.getUsername());
+        }
+    }
+
+    @Transactional
+    public void declineRoomInvitation(Long invitationId, User userDeclining) {
+        log.info("User '{}' attempting to decline invitation ID: {}", userDeclining.getUsername(), invitationId);
+        RoomInvitation invitation = roomInvitationRepository.findById(invitationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invitation not found."));
+
+        if (invitation.getStatus() != InvitationStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invitation is no longer pending.");
+        }
+
+        invitation.setStatus(InvitationStatus.DECLINED);
+        roomInvitationRepository.save(invitation);
+        log.info("Invitation ID {} status updated to DECLINED for user '{}'", invitationId, userDeclining.getUsername());
     }
 }
