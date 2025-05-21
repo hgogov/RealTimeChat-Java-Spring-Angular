@@ -16,6 +16,10 @@ export interface CreateRoomPayload {
     isPublic: boolean;
 }
 
+export interface InviteUserPayload {
+  username: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -39,6 +43,10 @@ export class ChatRoomService {
 
   leaveRoom(roomId: number): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${roomId}/leave`);
+  }
+
+  inviteUser(roomId: number, payload: InviteUserPayload): Observable<void> {
+    return this.http.post<void>(`${this.apiUrl}/${roomId}/invites`, payload);
   }
 
   getDiscoverableRooms(): Observable<ChatRoom[]> {

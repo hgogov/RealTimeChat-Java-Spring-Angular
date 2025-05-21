@@ -24,6 +24,15 @@ export interface PresenceEvent {
   online: boolean;
 }
 
+export interface InvitationNotification {
+  type: 'NEW_INVITATION' | 'INVITATION_ACCEPTED' | 'INVITATION_DECLINED';
+  invitationId: number;
+  roomId: number;
+  roomName: string;
+  inviterUsername?: string;
+  acceptedByUsername?: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -51,10 +60,15 @@ export class WebsocketService implements OnDestroy {
   private currentRoomSubject = new BehaviorSubject<string | null>(null);
   public currentRoom$ = this.currentRoomSubject.asObservable();
 
+  // Subject for Invitation Notifications
+  private invitationNotificationSubject = new Subject<InvitationNotification>();
+  public invitationNotification$ = this.invitationNotificationSubject.asObservable();
+
   // Subscription references
   private roomMessageSubscription?: StompSubscription;
   private roomTypingSubscription?: StompSubscription;
   private roomPresenceSubscription?: StompSubscription;
+  private userInvitationSubscription?: StompSubscription;
 
   constructor(private authService: AuthService) {
     this.initializeClient();
@@ -129,6 +143,8 @@ export class WebsocketService implements OnDestroy {
     console.log('[WebSocket] Connection established. User:', frame?.headers['user-name']);
     this.connectionState$.next(true);
 
+    this.subscribeToUserInvitationQueue();
+
     const intendedRoom = this.currentRoomSubject.value;
     if (intendedRoom) {
         console.log(`[WebSocket] Re-joining intended room after connect: ${intendedRoom}`);
@@ -163,6 +179,32 @@ export class WebsocketService implements OnDestroy {
     this.clearSubscriptions();
   }
 
+  private subscribeToUserInvitationQueue(): void {
+      if (!this.client.connected) {
+          console.warn('[WebSocket] Cannot subscribe to user invitation queue - client not connected.');
+          return;
+      }
+      if (this.userInvitationSubscription) {
+          console.log('[WebSocket] Already subscribed to user invitation queue.');
+          return;
+      }
+
+      const destination = '/user/queue/invitations';
+      console.log(`[WebSocket] Subscribing to user invitation queue: ${destination}`);
+      this.userInvitationSubscription = this.client.subscribe(
+          destination,
+          (message: IMessage) => {
+              try {
+                  const notification: InvitationNotification = JSON.parse(message.body);
+                  console.log('[WebSocket] Received invitation notification:', notification);
+                  this.invitationNotificationSubject.next(notification);
+              } catch (e) {
+                  console.error('[WebSocket] Failed to parse invitation notification:', message.body, e);
+              }
+          },
+          { id: 'user-invitations-sub', ...this.getAuthHeaders() }
+      );
+  }
 
   // --- Room Handling ---
 
@@ -371,6 +413,11 @@ export class WebsocketService implements OnDestroy {
   private clearSubscriptions(): void {
     console.log('[WebSocket] Clearing ALL local STOMP subscriptions...');
     this.leaveCurrentRoom();
+
+    if (this.userInvitationSubscription) {
+        try { this.userInvitationSubscription.unsubscribe(); console.log('[WebSocket] Unsubscribed from user invitation queue.');} catch(e) {}
+        this.userInvitationSubscription = undefined;
+    }
 
     this.currentRoomPresenceSubject.next([]);
     this.typingSubject.next(null);
