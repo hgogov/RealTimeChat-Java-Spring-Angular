@@ -14,10 +14,10 @@ import java.util.Date;
 @Component
 public class JwtUtils {
 
-    @Value("${jwt.secret}") // Load secret from application.yml
+    @Value("${app.jwt.secret}") // Load secret from application.yml
     private String jwtSecret;
 
-    @Value("${jwt.expiration.ms}") // Load expiration from properties
+    @Value("${app.jwt.expiration.ms}") // Load expiration from properties
     private int jwtExpirationMs;
 
     private Key getSigningKey() {

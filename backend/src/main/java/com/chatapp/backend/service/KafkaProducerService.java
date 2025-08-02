@@ -15,7 +15,7 @@ public class KafkaProducerService {
     private final KafkaTemplate<String, ChatMessage> kafkaTemplate;
     private final String topic;
 
-    public KafkaProducerService(KafkaTemplate<String, ChatMessage> kafkaTemplate, @Value("${kafka.topics.chat-messages}") String topic) {
+    public KafkaProducerService(KafkaTemplate<String, ChatMessage> kafkaTemplate, @Value("${app.kafka.topics.chat-messages}") String topic) {
         this.kafkaTemplate = kafkaTemplate;
         this.topic = topic;
     }

@@ -25,7 +25,7 @@ public class KafkaConsumerService {
         this.messagingTemplate = messagingTemplate;
     }
 
-    @KafkaListener(topics = "${kafka.topics.chat-messages}", groupId = "chat-backend-group")
+    @KafkaListener(topics = "${app.kafka.topics.chat-messages}", groupId = "chat-backend-group")
     public void consumeMessage(ChatMessage message, Acknowledgment acknowledgment) {
         try {
             logger.info("[KafkaConsumerService] Consumed message for room '{}': {}", message.getRoomId(), message);
@@ -45,7 +45,7 @@ public class KafkaConsumerService {
         }
     }
 
-    @KafkaListener(topics = "${kafka.topics.chat-messages}-dlt", groupId = "chat-backend-dlt-group")
+    @KafkaListener(topics = "${app.kafka.topics.chat-messages-dlt}", groupId = "chat-backend-dlt-group")
     public void consumeDeadLetterMessage(ChatMessage message, Acknowledgment acknowledgment) {
         logger.error("[DLT Consumer] Received dead-letter message: {}", message);
         logger.error("DLT Message Details - ID: {}, Sender: {}, Room: {}, Timestamp: {}",

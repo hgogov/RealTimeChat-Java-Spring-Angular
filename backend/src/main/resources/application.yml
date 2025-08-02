@@ -1,57 +1,38 @@
-# Application Name
 spring:
   application:
     name: Chat Backend
-
-  # Database Configuration
   datasource:
-#    driver-class-name: org.postgresql.Driver
-#    username: chat_user
-#    password: chat_password
     url: jdbc:postgresql://localhost:5432/chatdb
-
-  # Flyway Configuration
+    username: chat_user
+    password: chat_password
   flyway:
     enabled: true
     locations: classpath:db/migration
-
-  # Hibernate Configuration
   jpa:
     hibernate:
       ddl-auto: validate
     show-sql: true
-
-  # WebSocket Configuration
   websocket:
     enabled: true
-
-  # Kafka Configuration
   kafka:
-#    bootstrap-servers: localhost:29092
+    bootstrap-servers: localhost:29092
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
       group-id: chat-backend-group
       auto-offset-reset: earliest
-      enable-auto-commit: false  # Manually acknowledge messages
+      enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
-        spring:
-          deserializer:
-            value:
-              delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
-          json:
-            trusted:
-              packages: "*"   # Accept all packages
-            value.default.type: "com.chatapp.backend.model.ChatMessage"
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: "*"
+        spring.json.value.default.type: "com.chatapp.backend.model.ChatMessage"
         session.timeout.ms: 60000
         heartbeat.interval.ms: 15000
     listener:
       ack-mode: manual
-
-  # Logging Configuration
   logging:
     level:
       org.springframework: DEBUG
@@ -59,29 +40,19 @@ spring:
       org.hibernate: DEBUG
       org.apache.kafka: DEBUG
       org.springframework.kafka: DEBUG
-      com.chatapp.backend.service.KafkaConsumerService: DEBUG
       com.chatapp.backend: DEBUG
       org.springframework.boot: INFO
-
-  # Jackson Configuration (for JSON serialization/deserialization)
   jackson:
     time-zone: UTC
 
-# Kafka Topics
-kafka:
-  topics:
-    chat-messages: chat-messages
-
-# JWT Configuration
-jwt:
-  secret: BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=
-  expiration:
-    ms: 86400000 # 24 hours
-
-## Redis Configuration
-#redis:
-#  host: localhost
-#  port: 6379
-
-cors:
-  allowed-origins: "http://localhost:4200"
+app:
+  kafka:
+    topics:
+      chat-messages: chat-messages
+      chat-messages-dlt: chat-messages-dlt
+  jwt:
+    secret: ${JWT_SECRET:BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=}
+    expiration:
+      ms: 86400000 # 24 hours
+  cors:
+    allowed-origins: "http://localhost:4200"
