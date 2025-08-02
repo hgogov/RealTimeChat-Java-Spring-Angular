@@ -4,9 +4,9 @@ import com.chatapp.backend.filter.JwtAuthFilter;
 import com.chatapp.backend.service.ChatRoomService;
 import com.chatapp.backend.service.CustomUserDetailsService;
 import com.chatapp.backend.utils.JwtUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -24,6 +24,11 @@ import org.springframework.security.messaging.access.intercept.AuthorizationChan
 import org.springframework.security.messaging.access.intercept.MessageMatcherDelegatingAuthorizationManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
@@ -32,6 +37,9 @@ public class SecurityConfig {
     private final CustomUserDetailsService customUserDetailsService;
     private final JwtUtils jwtUtils;
     private final ChatRoomService chatRoomService;
+
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
 
     public SecurityConfig(CustomUserDetailsService customUserDetailsService, JwtUtils jwtUtils, ChatRoomService chatRoomService) {
         this.customUserDetailsService = customUserDetailsService;
@@ -44,7 +52,6 @@ public class SecurityConfig {
         return new JwtAuthFilter(jwtUtils, customUserDetailsService);
     }
 
-    // Common Swagger paths
     private static final String[] SWAGGER_WHITELIST = {
             "/swagger-ui.html",
             "/swagger-ui/**",
@@ -54,11 +61,25 @@ public class SecurityConfig {
     };
 
     @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/**", "/ws/**").permitAll()
                         .requestMatchers(SWAGGER_WHITELIST).permitAll()
                         .anyRequest().authenticated()
@@ -73,54 +94,36 @@ public class SecurityConfig {
 
     @Bean
     public static MessageMatcherDelegatingAuthorizationManager.Builder messageMatcherDelegatingAuthorizationManagerBuilder() {
-        System.out.println("--- Creating MessageMatcherDelegatingAuthorizationManager.Builder Bean ---");
         return MessageMatcherDelegatingAuthorizationManager.builder();
     }
 
     @Bean
     AuthorizationManager<Message<?>> messageAuthorizationManager(MessageMatcherDelegatingAuthorizationManager.Builder messages) {
-        System.out.println("--- Configuring WebSocket Message Authorization ---");
         messages
                 .simpTypeMatchers(SimpMessageType.CONNECT, SimpMessageType.HEARTBEAT, SimpMessageType.UNSUBSCRIBE, SimpMessageType.DISCONNECT).permitAll()
-                // Secure actual messages sent TO the application
                 .simpDestMatchers("/app/**").authenticated()
-                // --- SECURE SUBSCRIPTIONS to room-specific topics ---
                 .simpSubscribeDestMatchers("/topic/chat/{roomId}/**", "/topic/typing/{roomId}/**").access(
                         (authenticationSupplier, context) -> {
-
                             Authentication authentication = authenticationSupplier.get();
-
                             if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
-                                System.out.println("[Authz] Denying SUBSCRIBE - User not authenticated.");
                                 return new AuthorizationDecision(false);
                             }
                             String username = authentication.getName();
                             String roomId = context.getVariables().get("roomId");
                             if (roomId == null) {
-                                Object payload = context.getMessage().getPayload();
-                                if (roomId == null) {
-                                    System.out.println("[Authz] Denying SUBSCRIBE - Room ID missing in destination path or payload.");
-                                    return new AuthorizationDecision(false);
-                                }
+                                return new AuthorizationDecision(false);
                             }
                             boolean isMember = chatRoomService.isUserMemberOfRoom(username, roomId);
-                            System.out.println("[Authz] Checking SUBSCRIBE for user '" + username + "' to room '" + roomId + "': " + (isMember ? "GRANTED" : "DENIED"));
-
                             return new AuthorizationDecision(isMember);
                         }
                 )
-                // --- END Room Subscription Security ---
-
-                .simpSubscribeDestMatchers("/topic/presence", "/topic/presence.list").authenticated()
-                .simpSubscribeDestMatchers("/user/**").authenticated()
+                .simpSubscribeDestMatchers("/topic/presence/**", "/user/**").authenticated()
                 .simpTypeMatchers(SimpMessageType.MESSAGE, SimpMessageType.SUBSCRIBE).denyAll()
                 .anyMessage().denyAll();
 
-        System.out.println("--- WebSocket Message Authorization Configured ---");
         return messages.build();
     }
 
-    // This bean applies the rules defined above to the message channels
     @Bean
     public AuthorizationChannelInterceptor messageAuthorizationChannelInterceptor(AuthorizationManager<Message<?>> authorizationManager) {
         AuthorizationChannelInterceptor interceptor = new AuthorizationChannelInterceptor(authorizationManager);
@@ -133,9 +136,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(
-            AuthenticationConfiguration config
-    ) throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 }

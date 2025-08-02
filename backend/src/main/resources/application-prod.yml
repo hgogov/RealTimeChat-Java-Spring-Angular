@@ -1,3 +1,5 @@
+server:
+  forward-headers-strategy: NATIVE
 spring:
   # Datasource config
   datasource:
