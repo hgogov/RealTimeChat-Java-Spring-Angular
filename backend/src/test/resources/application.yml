@@ -62,4 +62,5 @@ jwt:
   expiration:
     ms: 600000
 
-
+cors:
+  allowed-origins: "*"
