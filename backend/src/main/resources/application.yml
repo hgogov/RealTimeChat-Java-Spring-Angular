@@ -51,7 +51,7 @@ app:
       chat-messages: chat-messages
       chat-messages-dlt: chat-messages-dlt
   jwt:
-    secret: ${JWT_SECRET:BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=}
+    secret: ${JWT_SECRET}
     expiration:
       ms: 86400000 # 24 hours
   cors:

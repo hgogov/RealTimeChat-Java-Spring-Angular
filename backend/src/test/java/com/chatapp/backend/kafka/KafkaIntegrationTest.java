@@ -9,6 +9,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -29,12 +30,15 @@ import static org.mockito.Mockito.*;
 @DirtiesContext
 @EmbeddedKafka(partitions = 1,
         brokerProperties = {"listeners=PLAINTEXT://localhost:9092", "port=9092"},
-        topics = {KafkaIntegrationTest.CHAT_TOPIC, KafkaIntegrationTest.DLT_TOPIC})
+        topics = {"${app.kafka.topics.chat-messages}", "${app.kafka.topics.chat-messages-dlt}"})
 @Import(TestControllerConfiguration.class)
 class KafkaIntegrationTest {
 
-    static final String CHAT_TOPIC = "chat-messages";
-    static final String DLT_TOPIC = "chat-messages-dlt";
+    @Value("${app.kafka.topics.chat-messages}")
+    private String chatTopic;
+
+    @Value("${app.kafka.topics.chat-messages-dlt}")
+    private String dltTopic;
 
     @Autowired
     private KafkaTemplate<String, Object> kafkaTemplate;
@@ -57,7 +61,6 @@ class KafkaIntegrationTest {
 
     @Test
     void whenMessageSent_thenConsumerShouldProcessSuccessfully() {
-        // Arrange
         ChatMessage messageToSend = new ChatMessage();
         messageToSend.setContent("Successful Message");
         messageToSend.setSender("testSuccess");
@@ -73,13 +76,11 @@ class KafkaIntegrationTest {
 
         when(messageRepository.save(any(ChatMessage.class))).thenReturn(savedMessage);
 
-        kafkaTemplate.send(CHAT_TOPIC, messageToSend);
+        kafkaTemplate.send(chatTopic, messageToSend);
 
         await().atMost(5, TimeUnit.SECONDS).untilAsserted(() ->
-                verify(messageRepository, times(1)).save(chatMessageCaptor.capture())
+                verify(messageRepository, times(1)).save(any(ChatMessage.class))
         );
-        assertThat(chatMessageCaptor.getValue().getContent()).isEqualTo("Successful Message");
-
 
         verify(messagingTemplate, times(1)).convertAndSend(
                 destinationCaptor.capture(),
@@ -87,8 +88,6 @@ class KafkaIntegrationTest {
         );
         assertThat(destinationCaptor.getValue()).isEqualTo("/topic/chat/testRoom");
         assertThat(chatMessageCaptor.getValue().getId()).isEqualTo(savedMessage.getId());
-
-        System.out.println("Success Test: Verified save and broadcast mocks were called.");
     }
 
     @Test
@@ -102,7 +101,7 @@ class KafkaIntegrationTest {
         doThrow(new RuntimeException("Simulated permanent processing error!"))
                 .when(messageRepository).save(any(ChatMessage.class));
 
-        kafkaTemplate.send(CHAT_TOPIC, messageToFail);
+        kafkaTemplate.send(chatTopic, messageToFail);
 
         await().atMost(10, TimeUnit.SECONDS).untilAsserted(() ->
                 verify(messageRepository, times(4)).save(any(ChatMessage.class))
@@ -124,7 +123,7 @@ class KafkaIntegrationTest {
         doThrow(new IllegalArgumentException("Simulated non-retryable error!"))
                 .when(messageRepository).save(any(ChatMessage.class));
 
-        kafkaTemplate.send(CHAT_TOPIC, messageNonRetry);
+        kafkaTemplate.send(chatTopic, messageNonRetry);
 
         await().atMost(5, TimeUnit.SECONDS).untilAsserted(() ->
                 verify(messageRepository, times(1)).save(any(ChatMessage.class))

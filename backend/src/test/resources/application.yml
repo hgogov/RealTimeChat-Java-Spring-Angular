@@ -4,6 +4,7 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
+
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
@@ -12,11 +13,14 @@ spring:
     properties:
       hibernate:
         format_sql: false
+
   flyway:
     enabled: false
+
   redis:
     host: localhost
     port: 6379
+
   kafka:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -24,7 +28,7 @@ spring:
       properties:
         spring.json.add.type.headers: false
     consumer:
-      group-id: chat-backend-group
+      group-id: chat-backend-group-test
       auto-offset-reset: earliest
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -35,23 +39,24 @@ spring:
         spring.json.value.default.type: "com.chatapp.backend.model.ChatMessage"
     listener:
       ack-mode: manual
-    topics:
-      chat-messages: chat-messages-test
-      chat-messages-dlt: chat-messages-test-dlt
 
   logging:
     level:
       org.springframework.test: INFO
       org.springframework.boot.test: INFO
       org.springframework.security: INFO
-      org.hibernate.SQL: DEBUG
-      org.hibernate.type.descriptor.sql.BasicBinder: TRACE
       com.chatapp.backend: DEBUG
 
-jwt:
-  secret: BjfdkB2OVEAfWA41INn0vDxf+Uknf6Cf3ED1NZTUf8g=
-  expiration:
-    ms: 600000
+app:
+  kafka:
+    topics:
+      chat-messages: chat-messages-test
+      chat-messages-dlt: chat-messages-test-dlt
 
-cors:
-  allowed-origins: "*"
+  jwt:
+    secret: "a-very-secure-and-sufficiently-long-test-secret-for-hs256"
+    expiration:
+      ms: 600000
+
+  cors:
+    allowed-origins: "http://localhost"
