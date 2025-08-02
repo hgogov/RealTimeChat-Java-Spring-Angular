@@ -27,7 +27,7 @@ spring:
 
   # Kafka Configuration
   kafka:
-#    bootstrap-servers: localhost:29092 # Kafka server (from docker-compose)
+#    bootstrap-servers: localhost:29092
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -45,11 +45,11 @@ spring:
           json:
             trusted:
               packages: "*"   # Accept all packages
-            value.default.type: "com.chatapp.backend.model.ChatMessage"  # Define the default type properly
-        session.timeout.ms: 60000  # Extend session timeout (default is usually 45000)
-        heartbeat.interval.ms: 15000  # Adjust heartbeat frequency
+            value.default.type: "com.chatapp.backend.model.ChatMessage"
+        session.timeout.ms: 60000
+        heartbeat.interval.ms: 15000
     listener:
-      ack-mode: manual  # Explicitly set to manual acknowledgment
+      ack-mode: manual
 
   # Logging Configuration
   logging:
@@ -65,7 +65,7 @@ spring:
 
   # Jackson Configuration (for JSON serialization/deserialization)
   jackson:
-    time-zone: UTC # Ensure consistent timestamps
+    time-zone: UTC
 
 # Kafka Topics
 kafka:
@@ -82,3 +82,6 @@ jwt:
 #redis:
 #  host: localhost
 #  port: 6379
+
+cors:
+  allowed-origins: "http://localhost:4200"
