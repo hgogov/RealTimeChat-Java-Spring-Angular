@@ -1,5 +1,6 @@
 server:
   forward-headers-strategy: NATIVE
+  use-forward-headers: true
 spring:
   # Datasource config
   datasource:
