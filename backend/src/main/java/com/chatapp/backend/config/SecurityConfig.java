@@ -5,10 +5,8 @@ import com.chatapp.backend.service.ChatRoomService;
 import com.chatapp.backend.service.CustomUserDetailsService;
 import com.chatapp.backend.utils.JwtUtils;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.Ordered;
 import org.springframework.http.HttpMethod;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.SimpMessageType;
@@ -28,8 +26,6 @@ import org.springframework.security.messaging.access.intercept.MessageMatcherDel
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.filter.CorsFilter;
 
 import java.util.Arrays;
 import java.util.List;
@@ -67,6 +63,29 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                .cors(cors -> cors.configurationSource(request -> {
+                    CorsConfiguration config = new CorsConfiguration();
+
+                    System.out.println("--- Spring Security CORS Filter ---");
+                    System.out.println("Evaluating request for Origin: " + request.getHeader("Origin"));
+                    System.out.println("Allowed Origins are: " + allowedOrigins);
+                    System.out.println("---------------------------------");
+
+                    config.setAllowedOrigins(List.of(allowedOrigins.split(",")));
+                    config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+                    config.setAllowedHeaders(Arrays.asList(
+                            "Origin", "Content-Type", "Accept", "Authorization",
+                            "X-Requested-With", "Access-Control-Request-Method", "Access-Control-Request-Headers"
+                    ));
+                    config.setExposedHeaders(Arrays.asList(
+                            "Origin", "Content-Type", "Accept", "Authorization",
+                            "Access-Control-Allow-Origin", "Access-Control-Allow-Credentials"
+                    ));
+                    config.setAllowCredentials(true);
+                    config.setMaxAge(3600L);
+
+                    return config;
+                }))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -82,28 +101,6 @@ public class SecurityConfig {
         return http.build();
     }
 
-    @Bean
-    public FilterRegistrationBean<CorsFilter> corsFilter() {
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowCredentials(true);
-        config.setAllowedOrigins(List.of(allowedOrigins.split(",")));
-        config.setAllowedHeaders(Arrays.asList(
-                "Origin", "Content-Type", "Accept", "Authorization",
-                "X-Requested-With", "Access-Control-Request-Method", "Access-Control-Request-Headers"
-        ));
-        config.setExposedHeaders(Arrays.asList(
-                "Origin", "Content-Type", "Accept", "Authorization",
-                "Access-Control-Allow-Origin", "Access-Control-Allow-Credentials"
-        ));
-        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setMaxAge(3600L);
-        source.registerCorsConfiguration("/**", config);
-
-        FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(new CorsFilter(source));
-        bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
-        return bean;
-    }
 
     @Bean
     public static MessageMatcherDelegatingAuthorizationManager.Builder messageMatcherDelegatingAuthorizationManagerBuilder() {
@@ -139,8 +136,7 @@ public class SecurityConfig {
 
     @Bean
     public AuthorizationChannelInterceptor messageAuthorizationChannelInterceptor(AuthorizationManager<Message<?>> authorizationManager) {
-        AuthorizationChannelInterceptor interceptor = new AuthorizationChannelInterceptor(authorizationManager);
-        return interceptor;
+        return new AuthorizationChannelInterceptor(authorizationManager);
     }
 
     @Bean
