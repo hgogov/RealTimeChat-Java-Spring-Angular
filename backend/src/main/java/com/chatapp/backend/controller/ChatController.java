@@ -32,7 +32,6 @@ public class ChatController {
     @MessageMapping("/chat.sendMessage")
     public void sendMessage(@Payload ChatMessage message) {
         logger.info("Received message: {}", message);
-        // Send message to Kafka for processing
         kafkaProducerService.sendMessage(message);
     }
 
@@ -45,7 +44,6 @@ public class ChatController {
         }
         logger.info("Received typing event: {} from user: {}", typingEvent, username);
 
-        // Broadcast the typing event to others in the specific room
         String destination = "/topic/typing/" + typingEvent.getRoomId();
         logger.info("Broadcasting typing event to destination: {}", destination);
         messagingTemplate.convertAndSend(destination, typingEvent);

@@ -66,11 +66,6 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(request -> {
                     CorsConfiguration config = new CorsConfiguration();
 
-                    System.out.println("--- Spring Security CORS Filter ---");
-                    System.out.println("Evaluating request for Origin: " + request.getHeader("Origin"));
-                    System.out.println("Allowed Origins are: " + allowedOrigins);
-                    System.out.println("---------------------------------");
-
                     config.setAllowedOrigins(List.of(allowedOrigins.split(",")));
                     config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
                     config.setAllowedHeaders(Arrays.asList(

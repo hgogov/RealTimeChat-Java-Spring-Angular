@@ -36,7 +36,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Tag(name = "Authentication", description = "User Registration and Login")
 public class AuthController {
 
-    private static final Logger log = LoggerFactory.getLogger(AuthController.class); // Add logger
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     @Autowired
     private ChatRoomService chatRoomService;
