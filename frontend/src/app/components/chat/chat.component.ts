@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, ChangeDetectorRef, inject } from '@angular/core';
-import { CommonModule, AsyncPipe, DatePipe } from '@angular/common';
+import { CommonModule, AsyncPipe } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Subscription, Subject, filter, distinctUntilChanged, takeUntil, debounceTime, timer } from 'rxjs';
@@ -35,6 +35,7 @@ import { InvitationNotification } from '../../services/websocket.service';
 
 // App Pipes
 import { FilterCurrentUserPipe } from '../../pipes/filter-current-user.pipe';
+import { RelativeTimePipe } from '../../pipes/relative-time.pipe';
 
 @Component({
   selector: 'app-chat',
@@ -43,7 +44,6 @@ import { FilterCurrentUserPipe } from '../../pipes/filter-current-user.pipe';
     CommonModule,
     ReactiveFormsModule,
     AsyncPipe,
-    DatePipe,
     FilterCurrentUserPipe,
     MatCardModule,
     MatFormFieldModule,
@@ -58,7 +58,8 @@ import { FilterCurrentUserPipe } from '../../pipes/filter-current-user.pipe';
     MatTooltipModule,
     MatProgressSpinnerModule,
     MatBadgeModule,
-    MatExpansionModule
+    MatExpansionModule,
+    RelativeTimePipe
   ],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss']

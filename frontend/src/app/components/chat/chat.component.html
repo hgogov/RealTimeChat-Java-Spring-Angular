@@ -182,7 +182,7 @@
                   <div class="message" [ngClass]="{'my-message': message.sender === currentUser?.username, 'other-message': message.sender !== currentUser?.username}">
                     <div class="message-header">
                       <span class="sender" *ngIf="message.sender !== currentUser?.username">{{message.sender}}</span>
-                      <span class="timestamp">{{message.timestamp | date:'shortTime'}}</span>
+                      <span class="timestamp">{{ message.timestamp | relativeTime }}</span>
                     </div>
                     <div class="message-content">
                       {{message.content}}
